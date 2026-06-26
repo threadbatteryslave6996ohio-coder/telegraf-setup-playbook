@@ -1,0 +1,101 @@
+---
+- name: Install Tailscale and configure Telegraf output on Arch Linux
+  hosts: all
+  become: true
+
+  vars:
+    arch_required_packages:
+      - ca-certificates
+      - curl
+      - gnupg
+      - tailscale
+      - telegraf
+      - docker
+
+    # Tailscale
+    tailscale_authkey: ""
+    tailscale_hostname: "{{ inventory_hostname }}"
+
+    # Telegraf -> InfluxDB v2 remote endpoint
+    telegraf_output_url: "https://influxdb.example.com"
+    telegraf_output_token: ""
+    telegraf_output_org: "example-org"
+    telegraf_output_bucket: "telegraf"
+
+  pre_tasks:
+    - name: Fail on unsupported distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution | lower == "archlinux"
+        fail_msg: "This playbook currently supports Arch Linux hosts only."
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Compute missing packages
+      ansible.builtin.set_fact:
+        arch_missing_packages: "{{ arch_required_packages | difference(ansible_facts.packages.keys() | list) }}"
+
+    - name: Fail when Telegraf remote output variables are missing
+      ansible.builtin.assert:
+        that:
+          - telegraf_output_url | length > 0
+          - telegraf_output_token | length > 0
+          - telegraf_output_org | length > 0
+          - telegraf_output_bucket | length > 0
+        fail_msg: "Set telegraf_output_url, telegraf_output_token, telegraf_output_org, and telegraf_output_bucket before running."
+
+  tasks:
+    - name: Install base packages and services
+      ansible.builtin.command:
+        cmd: "pacman -S --noconfirm --needed {{ arch_missing_packages | join(' ') }}"
+      changed_when: true
+      when: arch_missing_packages | length > 0
+
+    - name: Enable and start tailscaled
+      ansible.builtin.systemd:
+        name: tailscaled
+        enabled: true
+        state: started
+
+    - name: Join Tailnet when an auth key is provided
+      ansible.builtin.command:
+        cmd: >-
+          tailscale up
+          --authkey={{ tailscale_authkey }}
+          --hostname={{ tailscale_hostname }}
+      when: tailscale_authkey | length > 0
+      no_log: true
+
+    - name: Configure Telegraf output to remote InfluxDB v2
+      ansible.builtin.copy:
+        dest: /etc/telegraf/telegraf.d/remote-output.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [[outputs.influxdb_v2]]
+            urls = ["{{ telegraf_output_url }}"]
+            token = "{{ telegraf_output_token }}"
+            organization = "{{ telegraf_output_org }}"
+            bucket = "{{ telegraf_output_bucket }}"
+      notify: Restart telegraf
+
+    - name: Enable and start Telegraf
+      ansible.builtin.systemd:
+        name: telegraf
+        enabled: true
+        state: started
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Restart telegraf
+      ansible.builtin.systemd:
+        name: telegraf
+        state: restarted
