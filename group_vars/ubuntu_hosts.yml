@@ -1,4 +1,4 @@
-ansible_admin_authorized_key: ""
+ansible_admin_authorized_key: "{{ lookup('file', '/tmp/telegraf-setup-playbook/ubuntu_ansible.pub') }}"
 
 ansible_admin_groups:
   - sudo

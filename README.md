@@ -72,6 +72,13 @@ cp inventory.ubuntu.example.ini inventory.ubuntu.ini
 cp group_vars/ubuntu_hosts.yml.example group_vars/ubuntu_hosts.yml
 ```
 
+The dedicated Ubuntu bootstrap SSH keypair is split across:
+
+- Private key: [/tmp/telegraf-setup-playbook/ubuntu_ansible](/tmp/telegraf-setup-playbook/ubuntu_ansible)
+- Public key: [/tmp/telegraf-setup-playbook/ubuntu_ansible.pub](/tmp/telegraf-setup-playbook/ubuntu_ansible.pub)
+
+Do not commit the private key. Keep it outside the repo.
+
 Typical bootstrap command:
 
 ```bash
@@ -81,7 +88,7 @@ ansible-playbook -i inventory.ubuntu.ini -u azureuser --private-key ~/.ssh/clipp
 Typical main run:
 
 ```bash
-ansible-playbook -i inventory.ubuntu.ini site-ubuntu.yml
+ansible-playbook -i inventory.ubuntu.ini --private-key /tmp/telegraf-setup-playbook/ubuntu_ansible site-ubuntu.yml
 ```
 
 ## Privilege Audit
