@@ -1,0 +1,29 @@
+ansible_admin_authorized_key: ""
+
+ansible_admin_groups:
+  - sudo
+
+ubuntu_required_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - auditd
+  - osquery
+  - tailscale
+  - prometheus-node-exporter
+  - fluent-bit
+  - docker.io
+
+tailscale_authkey: ""
+tailscale_hostname: "{{ inventory_hostname }}"
+
+loki_host: ""
+loki_port: 3100
+loki_uri: /loki/api/v1/push
+
+splunk_hec_host: ""
+splunk_hec_port: 8088
+splunk_hec_token: ""
+splunk_hec_index: security
+splunk_hec_sourcetype: vm_security
+splunk_hec_tls: true

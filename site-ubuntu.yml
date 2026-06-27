@@ -1,0 +1,188 @@
+---
+- name: Install Tailscale, Prometheus node exporter, and Fluent Bit on Ubuntu
+  hosts: all
+  remote_user: ansible
+  become: true
+
+  pre_tasks:
+    - name: Fail on unsupported distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution | lower == "ubuntu"
+        fail_msg: "This playbook currently supports Ubuntu hosts only."
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Compute missing packages
+      ansible.builtin.set_fact:
+        ubuntu_missing_packages: "{{ ubuntu_required_packages | difference(ansible_facts.packages.keys() | list) }}"
+
+    - name: Fail when Loki connection variables are missing
+      ansible.builtin.assert:
+        that:
+          - loki_host | length > 0
+          - loki_port | int > 0
+          - loki_uri | length > 0
+          - fluent_bit_tail_paths | length > 0
+          - fluent_bit_security_tail_paths | length > 0
+          - audit_rules | length > 0
+        fail_msg: "Set loki_host, loki_port, loki_uri, fluent_bit_tail_paths, fluent_bit_security_tail_paths, and audit_rules before running."
+
+    - name: Fail when Splunk HEC variables are missing
+      ansible.builtin.assert:
+        that:
+          - splunk_hec_host | length > 0
+          - splunk_hec_port | int > 0
+          - splunk_hec_token | length > 0
+          - splunk_hec_index | length > 0
+          - splunk_hec_sourcetype | length > 0
+        fail_msg: "Set splunk_hec_host, splunk_hec_port, splunk_hec_token, splunk_hec_index, and splunk_hec_sourcetype before running."
+
+  tasks:
+    - name: Install base packages and services
+      ansible.builtin.apt:
+        name: "{{ ubuntu_missing_packages }}"
+        state: present
+        update_cache: true
+      when: ubuntu_missing_packages | length > 0
+
+    - name: Enable and start tailscaled
+      ansible.builtin.systemd:
+        name: tailscaled
+        enabled: true
+        state: started
+
+    - name: Join Tailnet when an auth key is provided
+      ansible.builtin.command:
+        cmd: >-
+          tailscale up
+          --authkey={{ tailscale_authkey }}
+          --hostname={{ tailscale_hostname }}
+      when: tailscale_authkey | length > 0
+      no_log: true
+
+    - name: Enable and start Prometheus node exporter
+      ansible.builtin.systemd:
+        name: prometheus-node-exporter
+        enabled: true
+        state: started
+
+    - name: Install auditd security rules
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/99-security.rules
+        owner: root
+        group: root
+        mode: "0640"
+        content: |
+          {% for rule in audit_rules %}
+          {{ rule }}
+          {% endfor %}
+      notify:
+        - Load audit rules
+        - Restart auditd
+
+    - name: Enable and start auditd
+      ansible.builtin.systemd:
+        name: auditd
+        enabled: true
+        state: started
+
+    - name: Enable and start osqueryd
+      ansible.builtin.systemd:
+        name: osqueryd
+        enabled: true
+        state: started
+
+    - name: Configure Fluent Bit to forward logs to Loki
+      ansible.builtin.copy:
+        dest: /etc/fluent-bit/fluent-bit.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [SERVICE]
+              Flush        1
+              Daemon       Off
+              Log_Level    info
+
+          {% for path in fluent_bit_tail_paths %}
+          [INPUT]
+              Name         tail
+              Tag          host.logs
+              Path         {{ path }}
+              Mem_Buf_Limit 5MB
+              Skip_Long_Lines On
+              Refresh_Interval 5
+
+          {% endfor %}
+          [OUTPUT]
+              Name         loki
+              Match        host.*
+              Host         {{ loki_host }}
+              Port         {{ loki_port }}
+              URI          {{ loki_uri }}
+              Labels       job=fluent-bit,host={{ inventory_hostname }}
+              LineFormat   json
+
+          {% for path in fluent_bit_security_tail_paths %}
+          [INPUT]
+              Name         tail
+              Tag          host.security
+              Path         {{ path }}
+              Mem_Buf_Limit 5MB
+              Skip_Long_Lines On
+              Refresh_Interval 5
+
+          {% endfor %}
+
+          [INPUT]
+              Name         systemd
+              Tag          host.security
+              Systemd_Filter _SYSTEMD_UNIT=sshd.service
+              Systemd_Filter _SYSTEMD_UNIT=systemd-logind.service
+              Systemd_Filter _SYSTEMD_UNIT=polkit.service
+              Systemd_Filter _SYSTEMD_UNIT=auditd.service
+              Systemd_Filter _SYSTEMD_UNIT=osqueryd.service
+              Read_From_Tail On
+              Strip_Underscores On
+
+          [OUTPUT]
+              Name         splunk
+              Match        host.security
+              Host         {{ splunk_hec_host }}
+              Port         {{ splunk_hec_port }}
+              splunk_token {{ splunk_hec_token }}
+              splunk_send_raw On
+              event_index  {{ splunk_hec_index }}
+              event_sourcetype {{ splunk_hec_sourcetype }}
+              tls          {{ 'on' if splunk_hec_tls else 'off' }}
+      notify: Restart fluent-bit
+
+    - name: Enable and start Fluent Bit
+      ansible.builtin.systemd:
+        name: fluent-bit
+        enabled: true
+        state: started
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Load audit rules
+      ansible.builtin.command:
+        cmd: augenrules --load
+
+    - name: Restart auditd
+      ansible.builtin.systemd:
+        name: auditd
+        state: restarted
+
+    - name: Restart fluent-bit
+      ansible.builtin.systemd:
+        name: fluent-bit
+        state: restarted

@@ -1,6 +1,6 @@
 # telegraf-setup-playbook
 
-Ansible playbook that configures managed Arch Linux servers to send telemetry to external systems:
+Ansible playbooks that configure managed Arch Linux or Ubuntu servers to send telemetry to external systems:
 
 1. Installs Tailscale
 2. Joins the host to your tailnet when an auth key is provided
@@ -14,6 +14,8 @@ Ansible playbook that configures managed Arch Linux servers to send telemetry to
 10. Forwards security-related journal events and audit logs to an external Splunk HEC endpoint
 
 ## Usage
+
+### Arch Linux
 
 For a clean privilege split, bootstrap a dedicated `ansible` admin user first, then run the main playbook as that user with sudo.
 
@@ -53,6 +55,34 @@ This playbook targets Arch Linux hosts only.
 - `osquery` is enabled as a host visibility agent for later investigation and detection work.
 - Custom apps are fine as long as they write logs to files that Fluent Bit can read.
 - `ansible.cfg` sets the default SSH user to `ansible` and enables sudo by default.
+
+### Ubuntu
+
+Use the Ubuntu-named files when the target host is Ubuntu:
+
+- [`bootstrap-ubuntu.yml`](./bootstrap-ubuntu.yml)
+- [`site-ubuntu.yml`](./site-ubuntu.yml)
+- [`inventory.ubuntu.example.ini`](./inventory.ubuntu.example.ini)
+- [`group_vars/ubuntu_hosts.yml.example`](./group_vars/ubuntu_hosts.yml.example)
+
+Copy the example files first:
+
+```bash
+cp inventory.ubuntu.example.ini inventory.ubuntu.ini
+cp group_vars/ubuntu_hosts.yml.example group_vars/ubuntu_hosts.yml
+```
+
+Typical bootstrap command:
+
+```bash
+ansible-playbook -i inventory.ubuntu.ini -u azureuser --private-key ~/.ssh/clippy_azure bootstrap-ubuntu.yml
+```
+
+Typical main run:
+
+```bash
+ansible-playbook -i inventory.ubuntu.ini site-ubuntu.yml
+```
 
 ## Privilege Audit
 
