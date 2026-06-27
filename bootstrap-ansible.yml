@@ -1,0 +1,49 @@
+---
+- name: Bootstrap a dedicated Ansible admin account
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Fail on unsupported distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution | lower == "archlinux"
+        fail_msg: "This bootstrap playbook currently supports Arch Linux hosts only."
+
+    - name: Fail when the admin SSH key is missing
+      ansible.builtin.assert:
+        that:
+          - ansible_admin_authorized_key | length > 0
+        fail_msg: "Set ansible_admin_authorized_key to the public key you want on the host."
+
+  tasks:
+    - name: Install sudo
+      ansible.builtin.package:
+        name: sudo
+        state: present
+
+    - name: Create the Ansible admin user
+      ansible.builtin.user:
+        name: "{{ ansible_admin_user }}"
+        shell: "{{ ansible_admin_shell }}"
+        groups: "{{ ansible_admin_groups | join(',') }}"
+        append: true
+        create_home: true
+
+    - name: Install the Ansible admin SSH key
+      ansible.builtin.authorized_key:
+        user: "{{ ansible_admin_user }}"
+        key: "{{ ansible_admin_authorized_key }}"
+        state: present
+
+    - name: Allow passwordless sudo for the Ansible admin user
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/90-{{ ansible_admin_user }}"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "/usr/bin/visudo -cf %s"
+        content: |
+          Defaults:{{ ansible_admin_user }} use_pty
+          Defaults:{{ ansible_admin_user }} log_input,log_output
+          {{ ansible_admin_user }} ALL=(ALL) NOPASSWD:ALL

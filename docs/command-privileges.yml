@@ -1,0 +1,111 @@
+playbooks:
+  - name: bootstrap-ansible.yml
+    default_connection_user: existing-admin
+    become: true
+    source_of_privilege_logging: sudo
+    tasks:
+      - name: Install sudo
+        module: ansible.builtin.package
+        sudo: true
+        source_user: existing-admin
+        become_user: root
+      - name: Create the Ansible admin user
+        module: ansible.builtin.user
+        sudo: true
+        source_user: existing-admin
+        become_user: root
+      - name: Install the Ansible admin SSH key
+        module: ansible.builtin.authorized_key
+        sudo: true
+        source_user: existing-admin
+        become_user: root
+      - name: Allow passwordless sudo for the Ansible admin user
+        module: ansible.builtin.copy
+        target: /etc/sudoers.d/90-ansible
+        sudo: true
+        source_user: existing-admin
+        become_user: root
+  - name: site.yml
+    default_connection_user: ansible
+    become: true
+    source_of_privilege_logging: sudo
+    tasks:
+      - name: Install base packages and services
+        module: ansible.builtin.command
+        command: pacman -S --noconfirm --needed {{ arch_missing_packages | join(' ') }}
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Enable and start tailscaled
+        module: ansible.builtin.systemd
+        service_name: tailscaled
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Join Tailnet when an auth key is provided
+        module: ansible.builtin.command
+        command: tailscale up --authkey=... --hostname=...
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Enable and start Prometheus node exporter
+        module: ansible.builtin.systemd
+        service_name: prometheus-node-exporter
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Install auditd security rules
+        module: ansible.builtin.copy
+        target: /etc/audit/rules.d/99-security.rules
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Enable and start auditd
+        module: ansible.builtin.systemd
+        service_name: auditd
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Enable and start osqueryd
+        module: ansible.builtin.systemd
+        service_name: osqueryd
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Configure Fluent Bit to forward logs to Loki
+        module: ansible.builtin.copy
+        target: /etc/fluent-bit/fluent-bit.conf
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Enable and start Fluent Bit
+        module: ansible.builtin.systemd
+        service_name: fluent-bit
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Enable and start Docker
+        module: ansible.builtin.systemd
+        service_name: docker
+        sudo: true
+        source_user: ansible
+        become_user: root
+    handlers:
+      - name: Load audit rules
+        module: ansible.builtin.command
+        command: augenrules --load
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Restart auditd
+        module: ansible.builtin.systemd
+        service_name: auditd
+        sudo: true
+        source_user: ansible
+        become_user: root
+      - name: Restart fluent-bit
+        module: ansible.builtin.systemd
+        service_name: fluent-bit
+        sudo: true
+        source_user: ansible
+        become_user: root
