@@ -1,0 +1,44 @@
+ansible_admin_user: ansible
+ansible_admin_shell: /bin/bash
+ansible_admin_groups:
+  - sudo
+ansible_admin_authorized_key_file: "{{ lookup('env', 'HOME') }}/.ssh/clippy_azure.pub"
+
+ubuntu_required_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - auditd
+  - osquery
+  - tailscale
+  - prometheus-node-exporter
+  - fluent-bit
+  - docker.io
+
+fluent_bit_tail_paths:
+  - /var/log/*.log
+fluent_bit_security_tail_paths:
+  - /var/log/audit/*.log
+
+audit_rules:
+  - "-w /etc/passwd -p wa -k identity"
+  - "-w /etc/group -p wa -k identity"
+  - "-w /etc/sudoers -p wa -k sudoers"
+  - "-w /etc/sudoers.d/ -p wa -k sudoers"
+  - "-w /etc/ssh/sshd_config -p wa -k sshd"
+  - "-w /etc/polkit-1/ -p wa -k polkit"
+  - "-w /usr/bin/sudo -p x -k sudo"
+
+tailscale_authkey: ""
+tailscale_hostname: "{{ inventory_hostname }}"
+
+loki_host: "{{ inventory_hostname }}"
+loki_port: 8080
+loki_uri: /loki/api/v1/push
+
+splunk_hec_host: "{{ inventory_hostname }}"
+splunk_hec_port: 8088
+splunk_hec_token: ""
+splunk_hec_index: security
+splunk_hec_sourcetype: vm_security
+splunk_hec_tls: true

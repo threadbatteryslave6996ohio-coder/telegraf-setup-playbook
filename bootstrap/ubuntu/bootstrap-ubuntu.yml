@@ -1,7 +1,9 @@
 ---
 - name: Bootstrap a dedicated Ansible admin account on Ubuntu
-  hosts: all
+  hosts: ubuntu_hosts
   become: true
+  vars_files:
+    - ../../vars/ubuntu.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution
@@ -13,8 +15,8 @@
     - name: Fail when the admin SSH key is missing
       ansible.builtin.assert:
         that:
-          - ansible_admin_authorized_key | length > 0
-        fail_msg: "Set ansible_admin_authorized_key to the public key you want on the host."
+          - ansible_admin_authorized_key_file | length > 0
+        fail_msg: "Set ansible_admin_authorized_key_file to the public key file you want on the host."
 
   tasks:
     - name: Install sudo
@@ -34,7 +36,7 @@
     - name: Install the Ansible admin SSH key
       ansible.builtin.authorized_key:
         user: "{{ ansible_admin_user }}"
-        key: "{{ ansible_admin_authorized_key }}"
+        key: "{{ lookup('ansible.builtin.file', ansible_admin_authorized_key_file) }}"
         state: present
 
     - name: Allow passwordless sudo for the Ansible admin user

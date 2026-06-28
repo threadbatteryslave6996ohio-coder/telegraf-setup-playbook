@@ -58,24 +58,22 @@ This playbook targets Arch Linux hosts only.
 
 ### Ubuntu
 
-Use the Ubuntu-named files when the target host is Ubuntu:
+Use the Ubuntu files when the target host is Ubuntu.
 
-- [`bootstrap-ubuntu.yml`](./bootstrap-ubuntu.yml)
-- [`site-ubuntu.yml`](./site-ubuntu.yml)
-- [`inventory.ubuntu.example.ini`](./inventory.ubuntu.example.ini)
-- [`group_vars/ubuntu_hosts.yml.example`](./group_vars/ubuntu_hosts.yml.example)
+- [`bootstrap/ubuntu/bootstrap-ubuntu.yml`](./bootstrap/ubuntu/bootstrap-ubuntu.yml)
+- [`site/ubuntu/site-ubuntu.yml`](./site/ubuntu/site-ubuntu.yml)
+- [`bootstrap/ubuntu/inventory.ini`](./bootstrap/ubuntu/inventory.ini)
+- [`site/ubuntu/inventory.ini`](./site/ubuntu/inventory.ini)
+- [`vars/ubuntu.yml`](./vars/ubuntu.yml)
 
-Copy the example files first:
+Edit `vars/ubuntu.yml` once. It holds the Ubuntu bootstrap public key file path plus the shared host settings used by the site playbook.
 
-```bash
-cp inventory.ubuntu.example.ini inventory.ubuntu.ini
-cp group_vars/ubuntu_hosts.yml.example group_vars/ubuntu_hosts.yml
-```
+The connection details now live in inventory instead of the command line:
 
-The dedicated Ubuntu bootstrap SSH keypair is split across:
+- Bootstrap inventory: existing login user and SSH private key
+- Site inventory: `ansible` user and `/tmp/telegraf-setup-playbook/ubuntu_ansible`
 
-- Private key: [/tmp/telegraf-setup-playbook/ubuntu_ansible](/tmp/telegraf-setup-playbook/ubuntu_ansible)
-- Public key: [/tmp/telegraf-setup-playbook/ubuntu_ansible.pub](/tmp/telegraf-setup-playbook/ubuntu_ansible.pub)
+The Ubuntu node playbook now targets `archlinux-control-plane` and sends Loki traffic to the control-server proxy on port `8080`.
 
 Make sure the private key is readable only by you before using it:
 
@@ -85,16 +83,12 @@ chmod 600 /tmp/telegraf-setup-playbook/ubuntu_ansible
 
 Do not commit the private key. Keep it outside the repo.
 
-Typical bootstrap command:
-
 ```bash
-ansible-playbook -i inventory.ubuntu.ini -u azureuser --private-key ~/.ssh/clippy_azure bootstrap-ubuntu.yml
+ansible-playbook -i bootstrap/ubuntu/inventory.ini bootstrap/ubuntu/bootstrap-ubuntu.yml
 ```
 
-Typical main run:
-
 ```bash
-ansible-playbook -i inventory.ubuntu.ini --private-key /tmp/telegraf-setup-playbook/ubuntu_ansible site-ubuntu.yml
+ansible-playbook -i site/ubuntu/inventory.ini site/ubuntu/site-ubuntu.yml
 ```
 
 ## Privilege Audit

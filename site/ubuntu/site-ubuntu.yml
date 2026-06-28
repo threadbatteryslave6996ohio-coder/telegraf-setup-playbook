@@ -1,8 +1,9 @@
 ---
 - name: Install Tailscale, Prometheus node exporter, and Fluent Bit on Ubuntu
-  hosts: all
-  remote_user: ansible
+  hosts: ubuntu_hosts
   become: true
+  vars_files:
+    - ../../vars/ubuntu.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution
@@ -29,16 +30,6 @@
           - fluent_bit_security_tail_paths | length > 0
           - audit_rules | length > 0
         fail_msg: "Set loki_host, loki_port, loki_uri, fluent_bit_tail_paths, fluent_bit_security_tail_paths, and audit_rules before running."
-
-    - name: Fail when Splunk HEC variables are missing
-      ansible.builtin.assert:
-        that:
-          - splunk_hec_host | length > 0
-          - splunk_hec_port | int > 0
-          - splunk_hec_token | length > 0
-          - splunk_hec_index | length > 0
-          - splunk_hec_sourcetype | length > 0
-        fail_msg: "Set splunk_hec_host, splunk_hec_port, splunk_hec_token, splunk_hec_index, and splunk_hec_sourcetype before running."
 
   tasks:
     - name: Install base packages and services
@@ -148,6 +139,7 @@
               Read_From_Tail On
               Strip_Underscores On
 
+          {% if splunk_hec_host | length > 0 and splunk_hec_token | length > 0 %}
           [OUTPUT]
               Name         splunk
               Match        host.security
@@ -158,6 +150,7 @@
               event_index  {{ splunk_hec_index }}
               event_sourcetype {{ splunk_hec_sourcetype }}
               tls          {{ 'on' if splunk_hec_tls else 'off' }}
+          {% endif %}
       notify: Restart fluent-bit
 
     - name: Enable and start Fluent Bit
