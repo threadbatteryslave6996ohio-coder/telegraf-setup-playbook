@@ -77,6 +77,12 @@ The dedicated Ubuntu bootstrap SSH keypair is split across:
 - Private key: [/tmp/telegraf-setup-playbook/ubuntu_ansible](/tmp/telegraf-setup-playbook/ubuntu_ansible)
 - Public key: [/tmp/telegraf-setup-playbook/ubuntu_ansible.pub](/tmp/telegraf-setup-playbook/ubuntu_ansible.pub)
 
+Make sure the private key is readable only by you before using it:
+
+```bash
+chmod 600 /tmp/telegraf-setup-playbook/ubuntu_ansible
+```
+
 Do not commit the private key. Keep it outside the repo.
 
 Typical bootstrap command:
