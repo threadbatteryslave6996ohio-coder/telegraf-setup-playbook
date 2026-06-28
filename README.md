@@ -7,11 +7,10 @@ Ansible playbooks that configure managed Arch Linux or Ubuntu servers to send te
 3. Installs Prometheus node exporter
 4. Installs Fluent Bit
 5. Installs auditd
-6. Installs osquery
-7. Installs Docker
-8. Enables node exporter so an external Prometheus server can scrape metrics from the host
-9. Forwards host logs to an external Loki instance
-10. Forwards security-related journal events and audit logs to an external Splunk HEC endpoint
+6. Installs osquery when a package is available for the target architecture
+7. Enables node exporter so an external Prometheus server can scrape metrics from the host
+8. Forwards host logs to an external Loki instance
+9. Forwards security-related journal events and audit logs to an external Splunk HEC endpoint
 
 ## Usage
 
@@ -53,6 +52,7 @@ This playbook targets Arch Linux hosts only.
 - Fluent Bit also forwards selected security-related systemd journal events and audit logs to Splunk HEC.
 - `auditd` is seeded with a small high-signal rule set for identity, sudo, SSH, and polkit changes.
 - `osquery` is enabled as a host visibility agent for later investigation and detection work.
+- The Ubuntu ARM64 configuration disables osquery because upstream does not publish an ARM64 Debian package.
 - Custom apps are fine as long as they write logs to files that Fluent Bit can read.
 - `ansible.cfg` sets the default SSH user to `ansible` and enables sudo by default.
 
@@ -71,14 +71,14 @@ Edit `vars/ubuntu.yml` once. It holds the Ubuntu bootstrap public key file path 
 The connection details now live in inventory instead of the command line:
 
 - Bootstrap inventory: existing login user and SSH private key
-- Site inventory: `ansible` user and `/tmp/telegraf-setup-playbook/ubuntu_ansible`
+- Site inventory: `ansible` user and `/home/kamina_goat/.ssh/clippy_azure`
 
 The Ubuntu node playbook now targets `archlinux-control-plane` and sends Loki traffic to the control-server proxy on port `8080`.
 
 Make sure the private key is readable only by you before using it:
 
 ```bash
-chmod 600 /tmp/telegraf-setup-playbook/ubuntu_ansible
+chmod 600 /home/kamina_goat/.ssh/clippy_azure
 ```
 
 Do not commit the private key. Keep it outside the repo.

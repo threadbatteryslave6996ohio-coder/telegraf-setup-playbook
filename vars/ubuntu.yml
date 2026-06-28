@@ -9,11 +9,12 @@ ubuntu_required_packages:
   - curl
   - gnupg
   - auditd
-  - osquery
   - tailscale
   - prometheus-node-exporter
   - fluent-bit
-  - docker.io
+
+# Upstream osquery does not publish an ARM64 Debian package.
+ubuntu_osquery_enabled: false
 
 fluent_bit_tail_paths:
   - /var/log/*.log

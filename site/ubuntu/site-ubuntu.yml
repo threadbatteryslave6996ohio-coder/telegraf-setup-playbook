@@ -9,8 +9,34 @@
     - name: Fail on unsupported distribution
       ansible.builtin.assert:
         that:
-          - ansible_distribution | lower == "ubuntu"
+          - ansible_facts["distribution"] | lower == "ubuntu"
         fail_msg: "This playbook currently supports Ubuntu hosts only."
+
+    - name: Install Fluent Bit repository prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - gnupg
+        state: present
+        update_cache: true
+
+    - name: Download Fluent Bit repository signing key
+      ansible.builtin.get_url:
+        url: https://packages.fluentbit.io/fluentbit.key
+        dest: /usr/share/keyrings/fluentbit-keyring.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure Fluent Bit repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/fluentbit-keyring.asc]
+          https://packages.fluentbit.io/ubuntu/{{ ansible_facts["distribution_release"] }}
+          {{ ansible_facts["distribution_release"] }} main
+        filename: fluent-bit
+        state: present
+        update_cache: true
 
     - name: Gather package facts
       ansible.builtin.package_facts:
@@ -80,11 +106,12 @@
         enabled: true
         state: started
 
-    - name: Enable and start osqueryd
+    - name: Enable and start osqueryd when supported
       ansible.builtin.systemd:
         name: osqueryd
         enabled: true
         state: started
+      when: ubuntu_osquery_enabled | bool
 
     - name: Configure Fluent Bit to forward logs to Loki
       ansible.builtin.copy:
@@ -115,7 +142,7 @@
               Port         {{ loki_port }}
               URI          {{ loki_uri }}
               Labels       job=fluent-bit,host={{ inventory_hostname }}
-              LineFormat   json
+              line_format  json
 
           {% for path in fluent_bit_security_tail_paths %}
           [INPUT]
@@ -135,7 +162,9 @@
               Systemd_Filter _SYSTEMD_UNIT=systemd-logind.service
               Systemd_Filter _SYSTEMD_UNIT=polkit.service
               Systemd_Filter _SYSTEMD_UNIT=auditd.service
+          {% if ubuntu_osquery_enabled | bool %}
               Systemd_Filter _SYSTEMD_UNIT=osqueryd.service
+          {% endif %}
               Read_From_Tail On
               Strip_Underscores On
 
@@ -156,12 +185,6 @@
     - name: Enable and start Fluent Bit
       ansible.builtin.systemd:
         name: fluent-bit
-        enabled: true
-        state: started
-
-    - name: Enable and start Docker
-      ansible.builtin.systemd:
-        name: docker
         enabled: true
         state: started
 
