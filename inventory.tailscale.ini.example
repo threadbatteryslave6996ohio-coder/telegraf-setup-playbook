@@ -1,0 +1,14 @@
+# Copy to inventory.tailscale.ini. Reaches hosts by Tailscale MagicDNS names
+# instead of public IPs. Use only after a host has joined the tailnet.
+
+[arch_hosts]
+my-arch-server ansible_host=my-arch-server
+
+[arch_hosts:vars]
+ansible_user=ansible
+
+[ubuntu_hosts]
+my-ubuntu-server ansible_host=my-ubuntu-server
+
+[ubuntu_hosts:vars]
+ansible_user=ansible

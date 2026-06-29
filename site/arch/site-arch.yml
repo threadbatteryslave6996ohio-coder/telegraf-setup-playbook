@@ -1,8 +1,11 @@
 ---
 - name: Install Tailscale, Prometheus node exporter, and Fluent Bit on Arch Linux
-  hosts: all
+  hosts: arch_hosts
   remote_user: ansible
   become: true
+  vars_files:
+    - ../../vars/common.yml
+    - ../../vars/arch.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution

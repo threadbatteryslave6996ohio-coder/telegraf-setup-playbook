@@ -1,0 +1,20 @@
+# Copy to inventory.ini and set your hosts. Each playbook picks its own group:
+#   bootstrap/arch + site/arch     -> [arch_hosts]
+#   bootstrap/ubuntu + site/ubuntu -> [ubuntu_hosts]
+#
+# ansible_user is the steady-state `ansible` account used by the site stage.
+# Bootstrap runs once as an EXISTING admin instead — override per run with -u,
+# e.g.  -u azureuser  (Ubuntu)  or  -u your-existing-admin  (Arch).
+
+[arch_hosts]
+server1 ansible_host=192.0.2.10
+server2 ansible_host=192.0.2.11
+
+[arch_hosts:vars]
+ansible_user=ansible
+
+[ubuntu_hosts]
+my-host ansible_host=192.0.2.20 ansible_ssh_private_key_file=~/.ssh/your_key
+
+[ubuntu_hosts:vars]
+ansible_user=ansible

@@ -1,5 +1,5 @@
 playbooks:
-  - name: bootstrap-ansible.yml
+  - name: bootstrap/arch/bootstrap-arch.yml
     default_connection_user: existing-admin
     become: true
     source_of_privilege_logging: sudo
@@ -25,7 +25,7 @@ playbooks:
         sudo: true
         source_user: existing-admin
         become_user: root
-  - name: site.yml
+  - name: site/arch/site-arch.yml
     default_connection_user: ansible
     become: true
     source_of_privilege_logging: sudo

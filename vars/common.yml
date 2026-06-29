@@ -1,0 +1,30 @@
+# Shared variables used by every bootstrap and site playbook, on all OSes.
+# OS-specific overrides live in vars/arch.yml and vars/ubuntu.yml.
+
+# Dedicated admin account created by the bootstrap playbooks and used by the
+# site playbooks over SSH.
+ansible_admin_user: ansible
+ansible_admin_shell: /bin/bash
+
+# Tailscale. Leave the auth key empty to skip `tailscale up` (the daemon is
+# still installed and started). Provide a key to auto-join the tailnet.
+tailscale_authkey: ""
+tailscale_hostname: "{{ inventory_hostname }}"
+
+# Log files Fluent Bit tails and forwards to Loki.
+fluent_bit_tail_paths:
+  - /var/log/*.log
+
+# Security log files Fluent Bit tails and forwards to Splunk HEC.
+fluent_bit_security_tail_paths:
+  - /var/log/audit/*.log
+
+# High-signal auditd rules for identity, sudo, SSH, and polkit changes.
+audit_rules:
+  - "-w /etc/passwd -p wa -k identity"
+  - "-w /etc/group -p wa -k identity"
+  - "-w /etc/sudoers -p wa -k sudoers"
+  - "-w /etc/sudoers.d/ -p wa -k sudoers"
+  - "-w /etc/ssh/sshd_config -p wa -k sshd"
+  - "-w /etc/polkit-1/ -p wa -k polkit"
+  - "-w /usr/bin/sudo -p x -k sudo"
