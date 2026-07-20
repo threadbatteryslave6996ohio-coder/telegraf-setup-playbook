@@ -1,0 +1,20 @@
+ansible_admin_authorized_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBpW8scynG6FmpsVl7VbDm81osgs0ZD/BuzAAl3Qo3K7 ansible-admin@server-management"
+
+tailscale_hostname: "{{ inventory_hostname }}"
+
+loki_host: "192.168.123.233"
+loki_port: 80
+loki_uri: /loki/api/v1/push
+
+splunk_hec_host: "192.168.123.233"
+splunk_hec_port: 8088
+splunk_hec_index: security
+splunk_hec_sourcetype: vm_security
+splunk_hec_tls: true
+# Splunk's HEC serves HTTPS with a self-signed cert by default, so skip
+# verification. Set to true once the HEC presents a trusted certificate.
+splunk_hec_tls_verify: false
+
+# Secrets (splunk_hec_token, tailscale_authkey) live in the untracked
+# secrets.yml alongside this file. Copy secrets.yml.example to secrets.yml
+# and fill it in. secrets.yml is gitignored and must never be committed.

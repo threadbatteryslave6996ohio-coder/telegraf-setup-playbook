@@ -20,8 +20,8 @@ Ansible playbooks that configure managed Arch Linux or Ubuntu servers to send te
 For a clean privilege split, bootstrap a dedicated `ansible` admin user first, then run the main playbook as that user with sudo.
 
 1. Copy [`group_vars/all.yml.example`](./group_vars/all.yml.example) to `group_vars/all.yml`.
-2. Copy [`group_vars/arch_hosts.yml.example`](./group_vars/arch_hosts.yml.example) to `group_vars/arch_hosts.yml`.
-3. Fill in `ansible_admin_authorized_key` and the environment-specific settings in `group_vars/arch_hosts.yml`.
+2. Copy [`group_vars/arch_hosts/secrets.yml.example`](./group_vars/arch_hosts/secrets.yml.example) to `group_vars/arch_hosts/secrets.yml` and fill in the credentials (`splunk_hec_token`, `tailscale_authkey`). `secrets.yml` is gitignored — never commit it.
+3. Set `ansible_admin_authorized_key` and the environment-specific (non-secret) settings in `group_vars/arch_hosts/main.yml`.
 4. Run the bootstrap playbook as an existing privileged account:
 
 ```bash
@@ -37,7 +37,7 @@ ansible-playbook site.yml
 
 If you keep the default `ansible.cfg`, you can omit `-i inventory.ini` and just run `ansible-playbook site.yml`.
 
-`group_vars/all.yml` holds shared defaults. `group_vars/arch_hosts.yml` holds the host- or environment-specific values.
+`group_vars/all.yml` holds shared defaults. `group_vars/arch_hosts/main.yml` holds the host- or environment-specific (non-secret) values, and the gitignored `group_vars/arch_hosts/secrets.yml` holds credentials.
 
 This repo does not provision Prometheus, Loki, Splunk, or any other control-plane service. It only configures the servers that send data.
 

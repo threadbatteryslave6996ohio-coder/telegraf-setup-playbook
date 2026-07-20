@@ -1,0 +1,2 @@
+# Untracked secrets — real credentials, never commit
+group_vars/*/secrets.yml
