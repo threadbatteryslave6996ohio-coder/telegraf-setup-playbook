@@ -33,3 +33,6 @@ splunk_hec_token: ""
 splunk_hec_index: security
 splunk_hec_sourcetype: vm_security
 splunk_hec_tls: true
+# Splunk's HEC serves HTTPS with a self-signed certificate by default, so
+# verification is off. Set to true once the HEC presents a trusted cert.
+splunk_hec_tls_verify: false

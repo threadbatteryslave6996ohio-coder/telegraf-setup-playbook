@@ -1,0 +1,6 @@
+# Real credentials — never commit.
+# Keep secrets out of the tracked vars/*.yml files; put them in a local
+# secrets file and pass it with -e @vars/secrets.yml, or use ansible-vault.
+vars/secrets.yml
+vars/*.secrets.yml
+group_vars/*/secrets.yml

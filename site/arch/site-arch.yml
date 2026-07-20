@@ -126,7 +126,7 @@
               Port         {{ loki_port }}
               URI          {{ loki_uri }}
               Labels       job=fluent-bit,host={{ inventory_hostname }}
-              LineFormat   json
+              line_format  json
 
           {% for path in fluent_bit_security_tail_paths %}
           [INPUT]
@@ -156,10 +156,11 @@
               Host         {{ splunk_hec_host }}
               Port         {{ splunk_hec_port }}
               splunk_token {{ splunk_hec_token }}
-              splunk_send_raw On
+              splunk_send_raw Off
               event_index  {{ splunk_hec_index }}
               event_sourcetype {{ splunk_hec_sourcetype }}
               tls          {{ 'on' if splunk_hec_tls else 'off' }}
+              tls.verify   {{ 'on' if splunk_hec_tls_verify | default(true) else 'off' }}
       notify: Restart fluent-bit
 
     - name: Enable and start Fluent Bit
