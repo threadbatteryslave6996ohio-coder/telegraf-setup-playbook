@@ -1,0 +1,77 @@
+---
+- name: Install the control-server deployment repo on the control plane
+  hosts: control_hosts
+  remote_user: ansible
+  become: true
+  vars_files:
+    - ../../vars/common.yml
+    - ../../vars/control.yml
+
+  pre_tasks:
+    - name: Fail on unsupported distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution | lower == "archlinux"
+        fail_msg: "This playbook currently supports Arch Linux hosts only."
+
+    - name: Fail when the control repo variables are missing
+      ansible.builtin.assert:
+        that:
+          - control_repo | length > 0
+          - control_repo_dest | length > 0
+          - control_repo_owner | length > 0
+        fail_msg: "Set control_repo, control_repo_owner, and control_repo_dest before running."
+
+  tasks:
+    - name: Install the GitHub CLI and git
+      community.general.pacman:
+        name:
+          - github-cli
+          - git
+        state: present
+
+    # gh reads GH_TOKEN from the environment, which avoids writing the token to
+    # the host's gh config. A public repo clones without a token; a private one
+    # needs control_repo_gh_token set in the gitignored secrets file.
+    - name: Check whether the repo is already cloned
+      ansible.builtin.stat:
+        path: "{{ control_repo_dest }}/.git"
+      register: control_repo_git
+
+    - name: Clone the control-server deployment repo
+      ansible.builtin.command:
+        cmd: >-
+          gh repo clone {{ control_repo_owner }}/{{ control_repo }}
+          {{ control_repo_dest }}
+      environment:
+        GH_TOKEN: "{{ control_repo_gh_token | default('', true) }}"
+      become_user: "{{ control_repo_owner_user }}"
+      when: not control_repo_git.stat.exists
+      changed_when: true
+
+    - name: Update the control-server deployment repo
+      ansible.builtin.command:
+        cmd: git pull --ff-only
+        chdir: "{{ control_repo_dest }}"
+      environment:
+        GH_TOKEN: "{{ control_repo_gh_token | default('', true) }}"
+      become_user: "{{ control_repo_owner_user }}"
+      when: control_repo_git.stat.exists
+      register: control_repo_pull
+      changed_when: "'Already up to date' not in control_repo_pull.stdout"
+
+    # .env holds the Splunk admin password and HEC token, so it is gitignored
+    # and never arrives with the clone. Without it `docker compose` refuses to
+    # start, which is why this is a separate step from the clone.
+    - name: Check whether the stack's .env exists
+      ansible.builtin.stat:
+        path: "{{ control_repo_dest }}/.env"
+      register: control_repo_env
+
+    - name: Report that .env must be provisioned before the stack can start
+      ansible.builtin.debug:
+        msg: >-
+          {{ control_repo_dest }}/.env is missing. Copy .env.example to .env on
+          the host and fill in SPLUNK_PASSWORD and SPLUNK_HEC_TOKEN, then run
+          `docker compose -p control-server up -d`.
+      when: not control_repo_env.stat.exists

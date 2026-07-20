@@ -62,9 +62,10 @@ service is running and set to start on boot.
 Copy each example, then edit:
 
 ```bash
-cp vars/common.yml.example vars/common.yml
-cp vars/arch.yml.example   vars/arch.yml      # if managing Arch hosts
-cp vars/ubuntu.yml.example vars/ubuntu.yml    # if managing Ubuntu hosts
+cp vars/common.yml.example  vars/common.yml
+cp vars/arch.yml.example    vars/arch.yml      # if managing Arch hosts
+cp vars/ubuntu.yml.example  vars/ubuntu.yml    # if managing Ubuntu hosts
+cp vars/control.yml.example vars/control.yml   # if managing the control plane
 ```
 
 Playbooks load `common.yml` first, then the OS file, so OS values override
@@ -75,6 +76,7 @@ shared ones.
 | `vars/common.yml` | `tailscale_authkey` (leave empty to install Tailscale without joining a tailnet). Optionally adjust `fluent_bit_tail_paths`, `fluent_bit_security_tail_paths`, and `audit_rules`. |
 | `vars/arch.yml` | `ansible_admin_authorized_key` (the public key string for the bootstrap user), `loki_host`, `splunk_hec_host`, `splunk_hec_token`. Adjust `loki_port`/`loki_uri`/`splunk_*` to match your endpoints. |
 | `vars/ubuntu.yml` | `ansible_admin_authorized_key_file` (path to the public key), `loki_host`, `splunk_hec_host`, `splunk_hec_token`. `ubuntu_osquery_enabled` is `false` because upstream ships no ARM64 package. |
+| `vars/control.yml` | `control_repo_owner`, `control_repo`, `control_repo_dest`, `control_repo_owner_user`. `control_repo_gh_token` only for a private repo. |
 
 Splunk forwarding is skipped automatically on Ubuntu when `splunk_hec_host`/
 `splunk_hec_token` are empty.
@@ -155,6 +157,36 @@ ansible-playbook site/ubuntu/site-ubuntu.yml
 # or, over Tailscale:
 ansible-playbook -i inventory.tailscale.ini site/ubuntu/site-ubuntu.yml
 ```
+
+### Control plane
+
+Installs the GitHub CLI and clones the control-server deployment repo onto the
+control-plane host, so the stack's config comes from git instead of being
+copied there by hand.
+
+```bash
+ansible-playbook site/control/site-control.yml
+# private repo — pass the token from the gitignored secrets file:
+ansible-playbook site/control/site-control.yml -e @vars/secrets.yml
+```
+
+Re-running is safe: an existing checkout is updated with `git pull --ff-only`
+rather than re-cloned, so a fast-forward conflict surfaces as a failure instead
+of silently discarding local edits.
+
+The clone does **not** start the stack. `.env` holds the Splunk admin password
+and HEC token, so it is gitignored and never arrives with the repo. Provision
+it on the host, then start the services:
+
+```bash
+cp .env.example .env    # then fill in SPLUNK_PASSWORD and SPLUNK_HEC_TOKEN
+docker compose -p control-server up -d
+```
+
+`gh` is used rather than a plain `git clone` so the same play works for a
+private repo: set `control_repo_gh_token` and it authenticates via `GH_TOKEN`
+in the task environment, which keeps the token out of the host's `gh` config
+and out of the process list. A public repo needs no token.
 
 ## Notes
 

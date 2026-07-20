@@ -1,0 +1,17 @@
+# Control-plane variables. Copy to vars/control.yml and edit.
+# Loaded after vars/common.yml, so values here override the shared defaults.
+
+# The control-server deployment repo, installed with the GitHub CLI.
+control_repo_owner: your-github-user
+control_repo: control-server-deployment
+
+# Where the repo is cloned on the control-plane host, and the local account
+# that owns the checkout. This should be the account that runs the stack, so
+# `docker compose` can read the working tree without sudo.
+control_repo_dest: /home/controlvm/control-server-deployment
+control_repo_owner_user: controlvm
+
+# Only needed for a private repo. A public one clones without a token. Put the
+# real value in the gitignored vars/secrets.yml and pass it with
+# `-e @vars/secrets.yml`, rather than writing it here.
+control_repo_gh_token: ""

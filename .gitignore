@@ -12,3 +12,5 @@ vars/ubuntu.yml
 vars/common.yml
 inventory.ini
 inventory.tailscale.ini
+
+vars/control.yml

@@ -165,7 +165,7 @@
               Systemd_Filter _SYSTEMD_UNIT=auditd.service
           {% if ubuntu_osquery_enabled | bool %}
               Systemd_Filter _SYSTEMD_UNIT=osqueryd.service
-          {% endif %}
+          {%- endif %}
               Read_From_Tail On
               Strip_Underscores On
 
@@ -180,10 +180,10 @@
               event_index  {{ splunk_hec_index }}
               event_sourcetype {{ splunk_hec_sourcetype }}
               tls          {{ 'on' if splunk_hec_tls else 'off' }}
-{% if splunk_hec_tls %}
+          {%- if splunk_hec_tls %}
               tls.verify   {{ 'on' if splunk_hec_tls_verify | default(true) else 'off' }}
-{% endif %}
-          {% endif %}
+          {%- endif %}
+          {%- endif %}
       notify: Restart fluent-bit
 
     - name: Enable and start Fluent Bit

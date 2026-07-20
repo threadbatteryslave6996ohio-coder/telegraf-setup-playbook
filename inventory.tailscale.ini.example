@@ -12,3 +12,9 @@ my-ubuntu-server ansible_host=my-ubuntu-server
 
 [ubuntu_hosts:vars]
 ansible_user=ansible
+
+[control_hosts]
+control-plane ansible_host=192.0.2.30
+
+[control_hosts:vars]
+ansible_user=ansible
