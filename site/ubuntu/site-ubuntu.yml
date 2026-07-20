@@ -180,7 +180,9 @@
               event_index  {{ splunk_hec_index }}
               event_sourcetype {{ splunk_hec_sourcetype }}
               tls          {{ 'on' if splunk_hec_tls else 'off' }}
+{% if splunk_hec_tls %}
               tls.verify   {{ 'on' if splunk_hec_tls_verify | default(true) else 'off' }}
+{% endif %}
           {% endif %}
       notify: Restart fluent-bit
 

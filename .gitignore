@@ -4,3 +4,11 @@
 vars/secrets.yml
 vars/*.secrets.yml
 group_vars/*/secrets.yml
+
+# Filled-in local config. Track only the *.example templates — these copies
+# hold real hosts, keys, and tokens.
+vars/arch.yml
+vars/ubuntu.yml
+vars/common.yml
+inventory.ini
+inventory.tailscale.ini

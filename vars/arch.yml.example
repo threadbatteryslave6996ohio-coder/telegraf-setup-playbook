@@ -21,18 +21,18 @@ ansible_admin_groups:
 # Paste the key string here (e.g. "ssh-ed25519 AAAA... you@host").
 ansible_admin_authorized_key: ""
 
-# External Loki endpoint host logs are forwarded to.
+# Loki endpoint host logs are forwarded to. Same single ingress port as the
+# HEC above; nginx routes /loki/ to Loki.
 loki_host: ""
-loki_port: 3100
+loki_port: 80
 loki_uri: /loki/api/v1/push
 
-# External Splunk HEC endpoint security events are forwarded to.
+# Splunk HEC endpoint security events are forwarded to. This is the control
+# plane's single ingress port; nginx routes /services/collector to Splunk.
+# Plain HTTP: the tailnet provides transport encryption.
 splunk_hec_host: ""
-splunk_hec_port: 8088
+splunk_hec_port: 80
 splunk_hec_token: ""
 splunk_hec_index: security
 splunk_hec_sourcetype: vm_security
-splunk_hec_tls: true
-# Splunk's HEC serves HTTPS with a self-signed certificate by default, so
-# verification is off. Set to true once the HEC presents a trusted cert.
-splunk_hec_tls_verify: false
+splunk_hec_tls: false

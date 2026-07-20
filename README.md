@@ -79,6 +79,34 @@ shared ones.
 Splunk forwarding is skipped automatically on Ubuntu when `splunk_hec_host`/
 `splunk_hec_token` are empty.
 
+#### Where agents ship data: one port, service names
+
+The control plane exposes **a single ingress port**. Every HTTP service behind
+it is addressed by a service name in the path and routed by an nginx reverse
+proxy, so `loki_host` and `splunk_hec_host` are the same host and the same
+port:
+
+| Destination | Endpoint |
+| --- | --- |
+| Loki | `http://<control-plane>/loki/api/v1/push` |
+| Splunk HEC | `http://<control-plane>/services/collector` |
+
+That is why `loki_port` and `splunk_hec_port` both default to `80` rather than
+Loki's `3100` and Splunk's `8088` — those are container-internal ports the
+proxy talks to, never reachable from an agent.
+
+The HEC path is not under `/splunk/` like the Splunk UI is, because Fluent
+Bit's `out_splunk` plugin hardcodes `/services/collector` and offers no way to
+prefix it. The proxy routes that path directly to Splunk.
+
+**No TLS.** `splunk_hec_tls` defaults to `false` and nothing verifies
+certificates. Agents and the control plane share a private Tailscale network,
+which provides transport encryption; adding TLS underneath it would mean
+managing certs for a hop that is already encrypted. Splunk's HEC has its own
+SSL turned off on the control-plane side for the same reason. If you ever run
+this outside a trusted network, set `splunk_hec_tls: true`, set
+`splunk_hec_tls_verify` (defaults to on) and terminate TLS at the proxy.
+
 ### 2. Inventory (`inventory.ini`)
 
 There is one inventory at the project root. Copy the example and set your hosts
