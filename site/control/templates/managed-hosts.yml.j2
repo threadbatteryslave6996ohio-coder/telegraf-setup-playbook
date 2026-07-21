@@ -1,0 +1,17 @@
+#jinja2: lstrip_blocks: True, trim_blocks: True
+# Managed by Ansible (site/control/site-control.yml) -- do not edit on the host.
+# Generated from the inventory, so every host the playbooks manage is scraped
+# without having to be registered here by hand.
+{% set managed = (groups['arch_hosts'] | default([])) + (groups['ubuntu_hosts'] | default([])) %}
+{% if managed | length == 0 %}
+[]
+{% else %}
+{% for host in managed | unique | sort %}
+- targets:
+    - {{ hostvars[host].ansible_host | default(host) }}:{{ node_exporter_port }}
+  labels:
+    env: managed
+    role: node-exporter
+    host: {{ host }}
+{% endfor %}
+{% endif %}

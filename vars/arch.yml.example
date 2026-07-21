@@ -10,8 +10,30 @@ arch_required_packages:
   - osquery
   - tailscale
   - prometheus-node-exporter
-  - fluent-bit
   - docker
+
+# Packages that exist only in the AUR, built from source by the site playbook
+# as the unprivileged admin user. pacman cannot install these directly.
+arch_aur_packages:
+  - fluent-bit
+
+# Marker file holding the date of the last `pacman -Syu`. When it already
+# reads today's date the site playbook skips the upgrade, so a full -Syu runs
+# at most once a day per host.
+arch_update_marker: /var/lib/ansible-last-upgrade.txt
+
+# Reboot after an upgrade that changed packages. Set false on hosts that must
+# not reboot unattended -- but note Docker stays broken until such a host is
+# rebooted by hand after a kernel upgrade.
+arch_reboot_after_upgrade: true
+
+# How long to wait for a rebooted host to come back, and how long to let it
+# settle once it answers again, in seconds.
+arch_reboot_timeout: 600
+arch_reboot_settle_seconds: 30
+
+# Scratch directory the AUR clones and builds happen in.
+arch_aur_build_dir: /var/tmp/aur-build
 
 # Supplementary groups for the admin user. Arch uses `wheel` for sudo.
 ansible_admin_groups:
@@ -21,18 +43,17 @@ ansible_admin_groups:
 # Paste the key string here (e.g. "ssh-ed25519 AAAA... you@host").
 ansible_admin_authorized_key: ""
 
-# Loki endpoint host logs are forwarded to. Same single ingress port as the
-# HEC above; nginx routes /loki/ to Loki.
-loki_host: ""
-loki_port: 80
+# Loki endpoint host logs are forwarded to. Derived from the shared control
+# plane address in common.yml; nginx routes /loki/ to Loki.
+loki_host: "{{ control_plane_host }}"
+loki_port: "{{ control_plane_port }}"
 loki_uri: /loki/api/v1/push
 
-# Splunk HEC endpoint security events are forwarded to. This is the control
-# plane's single ingress port; nginx routes /services/collector to Splunk.
-# Plain HTTP: the tailnet provides transport encryption.
-splunk_hec_host: ""
-splunk_hec_port: 80
-splunk_hec_token: ""
+# Splunk HEC endpoint security events are forwarded to. Same address and port
+# as Loki; nginx routes /services/collector to Splunk. Plain HTTP: the tailnet
+# provides transport encryption. splunk_hec_token comes from vars/secrets.yml.
+splunk_hec_host: "{{ control_plane_host }}"
+splunk_hec_port: "{{ control_plane_port }}"
 splunk_hec_index: security
 splunk_hec_sourcetype: vm_security
 splunk_hec_tls: false

@@ -26,10 +26,14 @@ inventory.ini             single inventory for every playbook
 inventory.tailscale.ini   same hosts, reached over Tailscale
   *.ini.example           templates — copy, then fill in
 
+requirements.yml          Ansible collections these playbooks need
+
 vars/                     shared configuration (the "env" files)
   common.yml              values used by every playbook, both OSes
-  arch.yml                Arch-only values (packages, Loki/Splunk, SSH key)
+  arch.yml                Arch-only values (packages, endpoints, SSH key)
   ubuntu.yml              Ubuntu-only values
+  control.yml             control-plane values (repo, proxy, stack name)
+  secrets.yml             secrets shared by the node and control playbooks
   *.yml.example           templates — copy, then fill in
 
 bootstrap/                stage 1: create the dedicated `ansible` admin user
@@ -37,8 +41,9 @@ bootstrap/                stage 1: create the dedicated `ansible` admin user
   ubuntu/ bootstrap-ubuntu.yml
 
 site/                     stage 2: install + enable + start the services
-  arch/   site-arch.yml
-  ubuntu/ site-ubuntu.yml
+  arch/    site-arch.yml
+  ubuntu/  site-ubuntu.yml
+  control/ site-control.yml   + templates/ for .env and scrape targets
 
 docs/command-privileges.yml   machine-readable map of which tasks use sudo
 ansible.cfg                    defaults (sudo on; default inventory = inventory.ini)
@@ -47,13 +52,22 @@ ansible.cfg                    defaults (sudo on; default inventory = inventory.
 One inventory serves both stages. Each playbook targets its own group
 (`arch_hosts` or `ubuntu_hosts`), and `ansible_user` is the steady-state
 `ansible` account. Bootstrap runs once as an existing admin instead — you
-override the user per run with `-u` (see below).
+override the user per run with `-e ansible_user=...` (see below).
 
 **Bootstrap vs. site.** Bootstrap runs once as an existing privileged login and
 creates a dedicated `ansible` user with passwordless sudo. The site playbook
 then runs as that `ansible` user and does the actual install. Both the install
 *and* the enable/start happen in the site stage — after a successful run every
 service is running and set to start on boot.
+
+## Install dependencies
+
+```bash
+ansible-galaxy collection install -r requirements.yml
+```
+
+`community.general` provides the pacman module the Arch playbooks use, and
+`community.docker` brings up the control-plane stack.
 
 ## Configure (what to populate)
 
@@ -66,6 +80,7 @@ cp vars/common.yml.example  vars/common.yml
 cp vars/arch.yml.example    vars/arch.yml      # if managing Arch hosts
 cp vars/ubuntu.yml.example  vars/ubuntu.yml    # if managing Ubuntu hosts
 cp vars/control.yml.example vars/control.yml   # if managing the control plane
+cp vars/secrets.yml.example vars/secrets.yml  # secrets, shared by both
 ```
 
 Playbooks load `common.yml` first, then the OS file, so OS values override
@@ -73,10 +88,11 @@ shared ones.
 
 | File | Fill in |
 | --- | --- |
-| `vars/common.yml` | `tailscale_authkey` (leave empty to install Tailscale without joining a tailnet). Optionally adjust `fluent_bit_tail_paths`, `fluent_bit_security_tail_paths`, and `audit_rules`. |
-| `vars/arch.yml` | `ansible_admin_authorized_key` (the public key string for the bootstrap user), `loki_host`, `splunk_hec_host`, `splunk_hec_token`. Adjust `loki_port`/`loki_uri`/`splunk_*` to match your endpoints. |
+| `vars/common.yml` | `control_plane_host` — the address every agent ships to; `provision-vms.sh` fills this in for local VMs. `tailscale_authkey` (leave empty to install Tailscale without joining a tailnet). Optionally adjust `fluent_bit_tail_paths`, `fluent_bit_security_tail_paths`, and `audit_rules`. |
+| `vars/arch.yml` | `ansible_admin_authorized_key` (the public key string for the bootstrap user). The Loki and Splunk endpoints derive from `control_plane_host`, so they need no editing unless your control plane is reached some other way. |
 | `vars/ubuntu.yml` | `ansible_admin_authorized_key_file` (path to the public key), `loki_host`, `splunk_hec_host`, `splunk_hec_token`. `ubuntu_osquery_enabled` is `false` because upstream ships no ARM64 package. |
-| `vars/control.yml` | `control_repo_owner`, `control_repo`, `control_repo_dest`, `control_repo_owner_user`. `control_repo_gh_token` only for a private repo. |
+| `vars/control.yml` | `control_repo_owner` and `control_repo`. The dest and owning user default to the `ansible` admin account, so they usually need no editing. |
+| `vars/secrets.yml` | `splunk_password`, `splunk_hec_token`, `grafana_admin_password`. `control_repo_gh_token` only for a private repo. Shared by the node and control-plane playbooks so both sides use the same HEC token. |
 
 Splunk forwarding is skipped automatically on Ubuntu when `splunk_hec_host`/
 `splunk_hec_token` are empty.
@@ -121,7 +137,9 @@ cp inventory.ini.example inventory.ini
 - Put Arch hosts under `[arch_hosts]` and Ubuntu hosts under `[ubuntu_hosts]`.
 - `ansible_user=ansible` (the group default) is correct for the **site** stage.
   The **bootstrap** stage connects as an existing admin instead — override it
-  per run with `-u` (e.g. `-u azureuser`); you don't need a second inventory.
+  per run with `-e ansible_user=...` (e.g. `-e ansible_user=azureuser`); you
+  don't need a second inventory. Use `-e`, not `-u`: `ansible_user` set on a
+  group outranks `-u` on the command line, so `-u` is silently ignored here.
 - `inventory.tailscale.ini` is the same inventory but with Tailscale MagicDNS
   names; select it with `-i inventory.tailscale.ini` once a host has joined the
   tailnet.
@@ -132,13 +150,14 @@ Keep private keys outside the repo and readable only by you
 ## Run
 
 `ansible.cfg` defaults to `inventory.ini`, so you only pass `-i` to switch to
-the Tailscale inventory. Bootstrap overrides the login user with `-u`.
+the Tailscale inventory. Bootstrap overrides the login user with
+`-e ansible_user=...`.
 
 ### Arch Linux
 
 ```bash
 # Stage 1 — as an existing privileged login
-ansible-playbook bootstrap/arch/bootstrap-arch.yml -u your-existing-admin
+ansible-playbook bootstrap/arch/bootstrap-arch.yml -e ansible_user=your-existing-admin
 
 # Stage 2 — as the ansible user
 ansible-playbook site/arch/site-arch.yml
@@ -150,7 +169,7 @@ ansible-playbook -i inventory.tailscale.ini site/arch/site-arch.yml
 
 ```bash
 # Stage 1 — as the cloud image's default user
-ansible-playbook bootstrap/ubuntu/bootstrap-ubuntu.yml -u azureuser
+ansible-playbook bootstrap/ubuntu/bootstrap-ubuntu.yml -e ansible_user=azureuser
 
 # Stage 2 — as the ansible user
 ansible-playbook site/ubuntu/site-ubuntu.yml
@@ -160,33 +179,40 @@ ansible-playbook -i inventory.tailscale.ini site/ubuntu/site-ubuntu.yml
 
 ### Control plane
 
-Installs the GitHub CLI and clones the control-server deployment repo onto the
-control-plane host, so the stack's config comes from git instead of being
-copied there by hand.
+Brings the whole control plane up on the host in `[control_hosts]`: installs
+Docker and the GitHub CLI, clones the control-server deployment repo, renders
+the stack's `.env` from `vars/secrets.yml`, registers every managed host as a
+Prometheus scrape target, and starts the stack.
 
 ```bash
 ansible-playbook site/control/site-control.yml
-# private repo — pass the token from the gitignored secrets file:
-ansible-playbook site/control/site-control.yml -e @vars/secrets.yml
 ```
 
-Re-running is safe: an existing checkout is updated with `git pull --ff-only`
-rather than re-cloned, so a fast-forward conflict surfaces as a failure instead
-of silently discarding local edits.
+When it finishes, the proxy answers on `control_proxy_port` and Grafana,
+Prometheus, Loki and Splunk are all reachable through it.
 
-The clone does **not** start the stack. `.env` holds the Splunk admin password
-and HEC token, so it is gitignored and never arrives with the repo. Provision
-it on the host, then start the services:
+Re-running is safe. An existing checkout is updated with `git pull --ff-only`,
+so a fast-forward conflict surfaces as a failure rather than silently
+discarding edits made on the host. A changed `.env` bounces the stack so the
+containers actually pick the new values up; an unchanged one leaves it running.
 
-```bash
-cp .env.example .env    # then fill in SPLUNK_PASSWORD and SPLUNK_HEC_TOKEN
-docker compose -p control-server up -d
-```
+**Secrets.** `.env` holds the Splunk admin password and HEC token, is
+gitignored, and never arrives with the clone — it is rendered on the host from
+`vars/secrets.yml`. That file is also where the *agents* get their HEC token,
+which is what guarantees both sides of the wire agree. A token that matches
+nothing means Splunk rejects every event, and it fails quietly.
+
+**Scrape targets.** `prometheus/targets/managed-hosts.yml` is generated from the
+inventory, so every host in `[arch_hosts]` or `[ubuntu_hosts]` is scraped
+without being registered by hand. Adding a node to the inventory and re-running
+this play is all it takes. Prometheus is reloaded in place so the change lands
+immediately rather than at the next file_sd refresh.
 
 `gh` is used rather than a plain `git clone` so the same play works for a
-private repo: set `control_repo_gh_token` and it authenticates via `GH_TOKEN`
-in the task environment, which keeps the token out of the host's `gh` config
-and out of the process list. A public repo needs no token.
+private repo: set `control_repo_gh_token` in `vars/secrets.yml` and it
+authenticates via `GH_TOKEN` in the task environment, which keeps the token out
+of the host's `gh` config and out of the process list. A public repo needs no
+token.
 
 ## Notes
 

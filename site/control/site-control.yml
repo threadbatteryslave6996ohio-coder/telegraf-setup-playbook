@@ -1,10 +1,11 @@
 ---
-- name: Install the control-server deployment repo on the control plane
+- name: Install and start the control-server stack on the control plane
   hosts: control_hosts
   remote_user: ansible
   become: true
   vars_files:
     - ../../vars/common.yml
+    - ../../vars/secrets.yml
     - ../../vars/control.yml
 
   pre_tasks:
@@ -22,56 +23,158 @@
           - control_repo_owner | length > 0
         fail_msg: "Set control_repo, control_repo_owner, and control_repo_dest before running."
 
+    # Checked up front rather than at first use: the stack cannot start without
+    # these, and failing before the clone is clearer than failing after it.
+    - name: Fail when the stack's secrets are missing
+      ansible.builtin.assert:
+        that:
+          - control_plane_host | length > 0
+          - splunk_password | length >= 8
+          - splunk_hec_token | length > 0
+          - grafana_admin_password | length > 0
+        fail_msg: >-
+          Set control_plane_host in vars/common.yml, and splunk_password
+          (8+ chars), splunk_hec_token and grafana_admin_password in
+          vars/secrets.yml. Copy vars/secrets.yml.example to get started.
+
   tasks:
-    - name: Install the GitHub CLI and git
+    - name: Install git, Docker, and the GitHub CLI
       community.general.pacman:
         name:
-          - github-cli
           - git
+          - docker
+          - docker-compose
+          # Only used to clone a private repo; harmless otherwise.
+          - github-cli
         state: present
 
-    # gh reads GH_TOKEN from the environment, which avoids writing the token to
-    # the host's gh config. A public repo clones without a token; a private one
-    # needs control_repo_gh_token set in the gitignored secrets file.
-    - name: Check whether the repo is already cloned
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    # The stack runs as the checkout's owner rather than root, so that account
+    # needs the docker group to reach the socket. The group only exists once
+    # Docker is installed, which is why this is here and not in bootstrap. It
+    # grants no new privilege: the admin user already has passwordless sudo.
+    - name: Add the stack owner to the docker group
+      ansible.builtin.user:
+        name: "{{ control_repo_owner_user }}"
+        groups: docker
+        append: true
+
+    # Group membership is established at login, so the existing SSH session
+    # still lacks it until the connection is torn down and remade.
+    - name: Reset the connection to pick up the new group membership
+      ansible.builtin.meta: reset_connection
+
+    # A public repo clones over plain https with no credentials. gh is not used
+    # for this case: it demands `gh auth login` even for a public repo, so it
+    # would make an unauthenticated control plane impossible to provision.
+    # force: false means local edits fail the run rather than being discarded.
+    - name: Clone or update the control-server deployment repo
+      ansible.builtin.git:
+        repo: "https://github.com/{{ control_repo_owner }}/{{ control_repo }}.git"
+        dest: "{{ control_repo_dest }}"
+        version: "{{ control_repo_version }}"
+        update: true
+        force: false
+      become_user: "{{ control_repo_owner_user }}"
+      when: control_repo_gh_token | default('', true) | length == 0
+
+    # Private repos need credentials. gh reads GH_TOKEN from the environment,
+    # which keeps the token out of the host's gh config and out of the process
+    # list -- unlike embedding it in the clone URL, where it lands in
+    # .git/config in plaintext.
+    - name: Check whether the private repo is already cloned
       ansible.builtin.stat:
         path: "{{ control_repo_dest }}/.git"
       register: control_repo_git
+      when: control_repo_gh_token | default('', true) | length > 0
 
-    - name: Clone the control-server deployment repo
+    - name: Clone the private control-server deployment repo
       ansible.builtin.command:
         cmd: >-
           gh repo clone {{ control_repo_owner }}/{{ control_repo }}
           {{ control_repo_dest }}
       environment:
-        GH_TOKEN: "{{ control_repo_gh_token | default('', true) }}"
+        GH_TOKEN: "{{ control_repo_gh_token }}"
       become_user: "{{ control_repo_owner_user }}"
-      when: not control_repo_git.stat.exists
+      when:
+        - control_repo_gh_token | default('', true) | length > 0
+        - not control_repo_git.stat.exists
       changed_when: true
 
-    - name: Update the control-server deployment repo
+    # --ff-only so a fast-forward conflict surfaces as a failure rather than
+    # silently discarding edits made on the host.
+    - name: Update the private control-server deployment repo
       ansible.builtin.command:
         cmd: git pull --ff-only
         chdir: "{{ control_repo_dest }}"
       environment:
-        GH_TOKEN: "{{ control_repo_gh_token | default('', true) }}"
+        GH_TOKEN: "{{ control_repo_gh_token }}"
       become_user: "{{ control_repo_owner_user }}"
-      when: control_repo_git.stat.exists
+      when:
+        - control_repo_gh_token | default('', true) | length > 0
+        - control_repo_git.stat.exists
       register: control_repo_pull
       changed_when: "'Already up to date' not in control_repo_pull.stdout"
 
-    # .env holds the Splunk admin password and HEC token, so it is gitignored
-    # and never arrives with the clone. Without it `docker compose` refuses to
-    # start, which is why this is a separate step from the clone.
-    - name: Check whether the stack's .env exists
-      ansible.builtin.stat:
-        path: "{{ control_repo_dest }}/.env"
-      register: control_repo_env
+    # .env is gitignored and never arrives with the clone, so it is rendered
+    # here from vars/secrets.yml. The HEC token written here is the same one the
+    # managed-node playbook hands Fluent Bit, which is what makes them agree.
+    - name: Render the stack's .env
+      ansible.builtin.template:
+        src: control-server.env.j2
+        dest: "{{ control_repo_dest }}/.env"
+        owner: "{{ control_repo_owner_user }}"
+        group: "{{ control_repo_owner_user }}"
+        mode: "0600"
+      no_log: true
+      notify: Restart the control-server stack
 
-    - name: Report that .env must be provisioned before the stack can start
-      ansible.builtin.debug:
-        msg: >-
-          {{ control_repo_dest }}/.env is missing. Copy .env.example to .env on
-          the host and fill in SPLUNK_PASSWORD and SPLUNK_HEC_TOKEN, then run
-          `docker compose -p control-server up -d`.
-      when: not control_repo_env.stat.exists
+    - name: Register managed hosts as Prometheus scrape targets
+      ansible.builtin.template:
+        src: managed-hosts.yml.j2
+        dest: "{{ control_repo_dest }}/prometheus/targets/managed-hosts.yml"
+        owner: "{{ control_repo_owner_user }}"
+        group: "{{ control_repo_owner_user }}"
+        mode: "0644"
+      notify: Reload Prometheus
+
+    - name: Start the control-server stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ control_repo_dest }}"
+        project_name: "{{ control_stack_name }}"
+        state: present
+        pull: missing
+      become_user: "{{ control_repo_owner_user }}"
+
+    - name: Wait for the proxy to answer
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ control_proxy_port }}/health"
+        status_code: 204
+      retries: 30
+      delay: 5
+      register: control_proxy_health
+      until: control_proxy_health is succeeded
+
+  handlers:
+    # A changed .env only reaches the containers on recreate, so bounce the
+    # stack rather than leaving them running with the previous values.
+    - name: Restart the control-server stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ control_repo_dest }}"
+        project_name: "{{ control_stack_name }}"
+        state: restarted
+      become_user: "{{ control_repo_owner_user }}"
+
+    # Prometheus reads file_sd targets from disk on its own refresh interval;
+    # --web.enable-lifecycle lets a reload pick them up immediately instead.
+    - name: Reload Prometheus
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ control_proxy_port }}/prometheus/-/reload"
+        method: POST
+        status_code: [200, 405]
+      failed_when: false

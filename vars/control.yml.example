@@ -1,17 +1,32 @@
 # Control-plane variables. Copy to vars/control.yml and edit.
 # Loaded after vars/common.yml, so values here override the shared defaults.
+# Secrets (Splunk password, HEC token, Grafana password) live in
+# vars/secrets.yml instead, because the managed-node playbook needs them too.
 
 # The control-server deployment repo, installed with the GitHub CLI.
 control_repo_owner: your-github-user
 control_repo: control-server-deployment
 
+# Branch or tag deployed to the control plane.
+control_repo_version: main
+
 # Where the repo is cloned on the control-plane host, and the local account
 # that owns the checkout. This should be the account that runs the stack, so
-# `docker compose` can read the working tree without sudo.
-control_repo_dest: /home/controlvm/control-server-deployment
-control_repo_owner_user: controlvm
+# `docker compose` can read the working tree without sudo. The defaults derive
+# from the admin user the bootstrap playbook creates, so they work on any host
+# without editing; override only if the stack should live somewhere else.
+control_repo_owner_user: "{{ ansible_admin_user }}"
+control_repo_dest: "/home/{{ control_repo_owner_user }}/{{ control_repo }}"
 
-# Only needed for a private repo. A public one clones without a token. Put the
-# real value in the gitignored vars/secrets.yml and pass it with
-# `-e @vars/secrets.yml`, rather than writing it here.
-control_repo_gh_token: ""
+# Address the proxy binds to on the control-plane host, and the single port
+# every service is reached through. 0.0.0.0 is fine on a tailnet-only host;
+# narrow it to the Tailscale address if the host also has a public interface.
+control_proxy_bind_address: 0.0.0.0
+control_proxy_port: "{{ control_plane_port }}"
+
+# Public URL Grafana serves itself under. Must match how you reach the proxy.
+control_grafana_root_url: "http://{{ control_plane_host }}:{{ control_proxy_port }}/grafana/"
+
+# Compose project name. Matches the Makefile default so `make` and the playbook
+# operate on the same stack rather than creating a second one.
+control_stack_name: control-server

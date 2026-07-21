@@ -20,6 +20,11 @@
         fail_msg: "Set ansible_admin_authorized_key to the public key you want on the host."
 
   tasks:
+    - name: Refresh the package database and upgrade the system
+      community.general.pacman:
+        update_cache: true
+        upgrade: true
+
     - name: Install sudo
       ansible.builtin.package:
         name: sudo

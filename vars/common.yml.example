@@ -11,6 +11,16 @@ ansible_admin_shell: /bin/bash
 tailscale_authkey: ""
 tailscale_hostname: "{{ inventory_hostname }}"
 
+# The control plane every managed host ships to, and the single port its nginx
+# proxy listens on. Loki and Splunk HEC are both reached here and told apart by
+# URL path, so one address covers both. Use the control plane's Tailscale name
+# once it has joined the tailnet.
+control_plane_host: ""
+control_plane_port: 80
+
+# Port Prometheus node exporter listens on, and scrapes managed hosts at.
+node_exporter_port: 9100
+
 # Log files Fluent Bit tails and forwards to Loki.
 fluent_bit_tail_paths:
   - /var/log/*.log

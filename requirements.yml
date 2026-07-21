@@ -1,0 +1,10 @@
+---
+# Collections the playbooks depend on. Install with:
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  # pacman, for package management and full-system upgrades on Arch
+  - name: community.general
+    version: ">=13.0.0"
+  # docker_compose_v2, for bringing the control-server stack up
+  - name: community.docker
+    version: ">=4.0.0"

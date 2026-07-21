@@ -4,6 +4,7 @@
   become: true
   vars_files:
     - ../../vars/common.yml
+    - ../../vars/secrets.yml
     - ../../vars/ubuntu.yml
 
   pre_tasks:
@@ -179,6 +180,7 @@
               splunk_send_raw Off
               event_index  {{ splunk_hec_index }}
               event_sourcetype {{ splunk_hec_sourcetype }}
+              event_host   {{ inventory_hostname }}
               tls          {{ 'on' if splunk_hec_tls else 'off' }}
           {%- if splunk_hec_tls %}
               tls.verify   {{ 'on' if splunk_hec_tls_verify | default(true) else 'off' }}
@@ -193,9 +195,18 @@
         state: started
 
   handlers:
+    # augenrules exits non-zero when a rule is already present in the kernel,
+    # even though it changed nothing -- which is the normal case whenever
+    # auditd loaded the same rules at startup. Treat that as success, but keep
+    # failing on anything else.
     - name: Load audit rules
       ansible.builtin.command:
         cmd: augenrules --load
+      register: augenrules_load
+      changed_when: "'No change' not in augenrules_load.stdout"
+      failed_when:
+        - augenrules_load.rc != 0
+        - "'Rule exists' not in augenrules_load.stderr"
 
     - name: Restart auditd
       ansible.builtin.systemd:

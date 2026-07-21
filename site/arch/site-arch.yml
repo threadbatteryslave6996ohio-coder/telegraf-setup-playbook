@@ -5,6 +5,7 @@
   become: true
   vars_files:
     - ../../vars/common.yml
+    - ../../vars/secrets.yml
     - ../../vars/arch.yml
 
   pre_tasks:
@@ -21,6 +22,7 @@
     - name: Compute missing packages
       ansible.builtin.set_fact:
         arch_missing_packages: "{{ arch_required_packages | difference(ansible_facts.packages.keys() | list) }}"
+        arch_missing_aur_packages: "{{ arch_aur_packages | default([]) | difference(ansible_facts.packages.keys() | list) }}"
 
     - name: Fail when Loki connection variables are missing
       ansible.builtin.assert:
@@ -44,11 +46,89 @@
         fail_msg: "Set splunk_hec_host, splunk_hec_port, splunk_hec_token, splunk_hec_index, and splunk_hec_sourcetype before running."
 
   tasks:
+    # A full -Syu is slow, so it runs at most once a day: the marker file holds
+    # the date of the last upgrade and the play skips it when that is today.
+    - name: Read the last system-upgrade marker
+      ansible.builtin.slurp:
+        src: "{{ arch_update_marker }}"
+      register: arch_update_marker_file
+      failed_when: false
+
+    - name: Decide whether the system was already upgraded today
+      ansible.builtin.set_fact:
+        arch_upgraded_today: >-
+          {{ (arch_update_marker_file.content | default('') | b64decode | trim)
+             == ansible_date_time.date }}
+
+    - name: Refresh the package database and upgrade the system
+      community.general.pacman:
+        update_cache: true
+        upgrade: true
+      register: arch_system_upgrade
+      when: not arch_upgraded_today
+
+    - name: Record today's date in the upgrade marker
+      ansible.builtin.copy:
+        dest: "{{ arch_update_marker }}"
+        content: "{{ ansible_date_time.date }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+      when: not arch_upgraded_today
+
     - name: Install base packages and services
       ansible.builtin.command:
         cmd: "pacman -S --noconfirm --needed {{ arch_missing_packages | join(' ') }}"
       changed_when: true
       when: arch_missing_packages | length > 0
+
+    # Some agents (Fluent Bit) ship only in the AUR, which pacman cannot reach.
+    # Build them from source as the unprivileged admin user: makepkg refuses to
+    # run as root, and -si escalates on its own via that user's passwordless sudo.
+    - name: Install build dependencies for AUR packages
+      ansible.builtin.command:
+        cmd: "pacman -S --noconfirm --needed base-devel git"
+      changed_when: true
+      when: arch_missing_aur_packages | length > 0
+
+    - name: Create a build directory for AUR packages
+      ansible.builtin.file:
+        path: "{{ arch_aur_build_dir }}"
+        state: directory
+        owner: "{{ ansible_admin_user }}"
+        group: "{{ ansible_admin_user }}"
+        mode: "0755"
+      when: arch_missing_aur_packages | length > 0
+
+    - name: Clone AUR package repositories
+      ansible.builtin.git:
+        repo: "https://aur.archlinux.org/{{ item }}.git"
+        dest: "{{ arch_aur_build_dir }}/{{ item }}"
+        version: master
+        update: true
+      become_user: "{{ ansible_admin_user }}"
+      loop: "{{ arch_missing_aur_packages }}"
+
+    - name: Build and install AUR packages
+      ansible.builtin.command:
+        cmd: makepkg --syncdeps --install --noconfirm --needed
+        chdir: "{{ arch_aur_build_dir }}/{{ item }}"
+      become_user: "{{ ansible_admin_user }}"
+      changed_when: true
+      loop: "{{ arch_missing_aur_packages }}"
+
+    # An upgrade can replace the kernel, which deletes the running kernel's
+    # modules and leaves Docker unable to load nf_tables. post_reboot_delay
+    # keeps Ansible from reconnecting mid-shutdown, which makes systemd reject
+    # service starts as "destructive".
+    - name: Reboot after a system upgrade
+      ansible.builtin.reboot:
+        msg: Rebooting after a system upgrade
+        reboot_timeout: "{{ arch_reboot_timeout }}"
+        post_reboot_delay: "{{ arch_reboot_settle_seconds }}"
+      when:
+        - arch_reboot_after_upgrade
+        - arch_system_upgrade is changed
 
     - name: Enable and start tailscaled
       ansible.builtin.systemd:
@@ -159,6 +239,7 @@
               splunk_send_raw Off
               event_index  {{ splunk_hec_index }}
               event_sourcetype {{ splunk_hec_sourcetype }}
+              event_host   {{ inventory_hostname }}
               tls          {{ 'on' if splunk_hec_tls else 'off' }}
           {%- if splunk_hec_tls %}
               tls.verify   {{ 'on' if splunk_hec_tls_verify | default(true) else 'off' }}
@@ -178,9 +259,18 @@
         state: started
 
   handlers:
+    # augenrules exits non-zero when a rule is already present in the kernel,
+    # even though it changed nothing -- which is the normal case whenever
+    # auditd loaded the same rules at startup. Treat that as success, but keep
+    # failing on anything else.
     - name: Load audit rules
       ansible.builtin.command:
         cmd: augenrules --load
+      register: augenrules_load
+      changed_when: "'No change' not in augenrules_load.stdout"
+      failed_when:
+        - augenrules_load.rc != 0
+        - "'Rule exists' not in augenrules_load.stderr"
 
     - name: Restart auditd
       ansible.builtin.systemd:
