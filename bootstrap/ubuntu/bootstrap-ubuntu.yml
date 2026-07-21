@@ -2,9 +2,6 @@
 - name: Bootstrap a dedicated Ansible admin account on Ubuntu
   hosts: ubuntu_hosts
   become: true
-  vars_files:
-    - ../../vars/common.yml
-    - ../../vars/ubuntu.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution

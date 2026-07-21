@@ -2,10 +2,6 @@
 - name: Install Tailscale, Prometheus node exporter, and Fluent Bit on Ubuntu
   hosts: ubuntu_hosts
   become: true
-  vars_files:
-    - ../../vars/common.yml
-    - ../../vars/secrets.yml
-    - ../../vars/ubuntu.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution

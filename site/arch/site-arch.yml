@@ -3,10 +3,6 @@
   hosts: arch_hosts
   remote_user: ansible
   become: true
-  vars_files:
-    - ../../vars/common.yml
-    - ../../vars/secrets.yml
-    - ../../vars/arch.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution

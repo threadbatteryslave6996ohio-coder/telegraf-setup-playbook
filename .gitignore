@@ -1,16 +1,19 @@
-# Real credentials — never commit.
-# Keep secrets out of the tracked vars/*.yml files; put them in a local
-# secrets file and pass it with -e @vars/secrets.yml, or use ansible-vault.
+# Real per-environment config — never commit.
+#
+# Each inventories/<env>/ directory holds real hosts, keys, tokens and
+# secrets in its group_vars/all/. Only the inventories/example/ template is
+# tracked; copy it to create a new environment.
+inventories/*
+!inventories/example
+
+# Legacy layout, superseded by inventories/<env>/. Kept ignored so any
+# leftover local copies never land in git.
 vars/secrets.yml
 vars/*.secrets.yml
-group_vars/*/secrets.yml
-
-# Filled-in local config. Track only the *.example templates — these copies
-# hold real hosts, keys, and tokens.
 vars/arch.yml
 vars/ubuntu.yml
 vars/common.yml
+vars/control.yml
+group_vars/*/secrets.yml
 inventory.ini
 inventory.tailscale.ini
-
-vars/control.yml

@@ -3,10 +3,6 @@
   hosts: control_hosts
   remote_user: ansible
   become: true
-  vars_files:
-    - ../../vars/common.yml
-    - ../../vars/secrets.yml
-    - ../../vars/control.yml
 
   pre_tasks:
     - name: Fail on unsupported distribution
@@ -33,9 +29,9 @@
           - splunk_hec_token | length > 0
           - grafana_admin_password | length > 0
         fail_msg: >-
-          Set control_plane_host in vars/common.yml, and splunk_password
+          Set control_plane_host in group_vars/all/common.yml, and splunk_password
           (8+ chars), splunk_hec_token and grafana_admin_password in
-          vars/secrets.yml. Copy vars/secrets.yml.example to get started.
+          group_vars/all/secrets.yml. Copy inventories/example/group_vars/all/secrets.yml to get started.
 
   tasks:
     - name: Install git, Docker, and the GitHub CLI
@@ -74,7 +70,7 @@
       ansible.builtin.include_tasks: tasks/update-repo.yml
 
     # .env is gitignored and never arrives with the clone, so it is rendered
-    # here from vars/secrets.yml. The HEC token written here is the same one the
+    # here from group_vars/all/secrets.yml. The HEC token written here is the same one the
     # managed-node playbook hands Fluent Bit, which is what makes them agree.
     - name: Render the stack's .env
       ansible.builtin.template:

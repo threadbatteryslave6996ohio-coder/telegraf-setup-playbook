@@ -4,24 +4,17 @@
 #   ansible-playbook site/control/update-setup.yml
 #
 # Pulls the control-server deployment repo to control_repo_version (set in
-# vars/control.yml, normally `main`), restarts the stack if the checkout moved,
+# group_vars/all/control.yml, normally `main`), restarts the stack if the checkout moved,
 # and waits for the proxy to come back. Nothing else: no package installs, no
 # .env or scrape-target rendering, no group changes.
 #
 # Use site-control.yml instead when provisioning a new control plane, or after
-# changing anything in vars/secrets.yml -- .env is rendered only there, so a
+# changing anything in group_vars/all/secrets.yml -- .env is rendered only there, so a
 # secret changed without that play never reaches the containers.
 - name: Update the control-server deployment on the control plane
   hosts: control_hosts
   remote_user: ansible
   become: true
-  vars_files:
-    - ../../vars/common.yml
-    # Loaded for control_repo_gh_token, which selects the private-repo clone
-    # path in tasks/update-repo.yml. Omitting it would silently fall back to an
-    # unauthenticated clone.
-    - ../../vars/secrets.yml
-    - ../../vars/control.yml
 
   pre_tasks:
     - name: Fail when the control repo variables are missing
@@ -33,7 +26,7 @@
           - control_repo_version | length > 0
         fail_msg: >-
           Set control_repo, control_repo_owner, control_repo_dest and
-          control_repo_version in vars/control.yml before running.
+          control_repo_version in group_vars/all/control.yml before running.
 
     # This play only updates an existing deployment. Pointing it at a host that
     # has never been provisioned would clone the repo but leave it without an

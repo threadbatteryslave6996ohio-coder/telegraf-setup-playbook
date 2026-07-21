@@ -22,19 +22,19 @@ configuration — the inventory and the variable files — lives at the top leve
 only the playbooks live inside the stage folders.
 
 ```
-inventory.ini             single inventory for every playbook
-inventory.tailscale.ini   same hosts, reached over Tailscale
-  *.ini.example           templates — copy, then fill in
+inventories/              one directory per environment
+  stg/                    staging (the ansible.cfg default)
+    hosts.ini             the environment's hosts
+    group_vars/all/       the environment's variables
+      common.yml          values used by every playbook, both OSes
+      arch.yml            Arch-only values (packages, endpoints, SSH key)
+      ubuntu.yml          Ubuntu-only values
+      control.yml         control-plane values (repo, proxy, stack name)
+      secrets.yml         secrets shared by the node and control playbooks
+  prod/                   production, same layout
+  example/                template — copy it to add an environment
 
 requirements.yml          Ansible collections these playbooks need
-
-vars/                     shared configuration (the "env" files)
-  common.yml              values used by every playbook, both OSes
-  arch.yml                Arch-only values (packages, endpoints, SSH key)
-  ubuntu.yml              Ubuntu-only values
-  control.yml             control-plane values (repo, proxy, stack name)
-  secrets.yml             secrets shared by the node and control playbooks
-  *.yml.example           templates — copy, then fill in
 
 bootstrap/                stage 1: create the dedicated `ansible` admin user
   arch/   bootstrap-arch.yml
@@ -44,9 +44,11 @@ site/                     stage 2: install + enable + start the services
   arch/    site-arch.yml
   ubuntu/  site-ubuntu.yml
   control/ site-control.yml   + templates/ for .env and scrape targets
+           update-setup.yml   pull the deployment repo + restart, nothing else
+           tasks/             steps shared by the two control playbooks
 
 docs/command-privileges.yml   machine-readable map of which tasks use sudo
-ansible.cfg                    defaults (sudo on; default inventory = inventory.ini)
+ansible.cfg                    defaults (sudo on; default inventory = inventories/stg)
 ```
 
 One inventory serves both stages. Each playbook targets its own group
@@ -71,28 +73,42 @@ ansible-galaxy collection install -r requirements.yml
 
 ## Configure (what to populate)
 
-### 1. Shared variable files (`vars/`)
+### 1. Per-environment variables (`inventories/<env>/group_vars/all/`)
 
-Copy each example, then edit:
+Each environment is a self-contained inventory directory. Ansible loads the
+`group_vars/all/` beside the inventory automatically, so selecting the
+inventory selects the whole configuration:
 
 ```bash
-cp vars/common.yml.example  vars/common.yml
-cp vars/arch.yml.example    vars/arch.yml      # if managing Arch hosts
-cp vars/ubuntu.yml.example  vars/ubuntu.yml    # if managing Ubuntu hosts
-cp vars/control.yml.example vars/control.yml   # if managing the control plane
-cp vars/secrets.yml.example vars/secrets.yml  # secrets, shared by both
+ansible-playbook site/arch/site-arch.yml                        # stg (default)
+ansible-playbook -i inventories/prod site/arch/site-arch.yml    # prod
 ```
 
-Playbooks load `common.yml` first, then the OS file, so OS values override
-shared ones.
+`ansible.cfg` defaults to `inventories/stg` deliberately: a forgotten `-i`
+hits staging rather than production.
+
+To add an environment, copy the template and fill it in:
+
+```bash
+cp -r inventories/example inventories/<env>
+```
+
+The playbooks deliberately do **not** use `vars_files`. Play-level `vars_files`
+outrank inventory `group_vars`, so a shared vars file would silently override
+whatever the selected environment specifies — every host would get the same
+control plane and the same secrets no matter which `-i` you passed. Keeping the
+values in `group_vars` is what makes the environments actually separate.
 
 | File | Fill in |
 | --- | --- |
-| `vars/common.yml` | `control_plane_host` — the address every agent ships to; `provision-vms.sh` fills this in for local VMs. `tailscale_authkey` (leave empty to install Tailscale without joining a tailnet). Optionally adjust `fluent_bit_tail_paths`, `fluent_bit_security_tail_paths`, and `audit_rules`. |
-| `vars/arch.yml` | `ansible_admin_authorized_key` (the public key string for the bootstrap user). The Loki and Splunk endpoints derive from `control_plane_host`, so they need no editing unless your control plane is reached some other way. |
-| `vars/ubuntu.yml` | `ansible_admin_authorized_key_file` (path to the public key), `loki_host`, `splunk_hec_host`, `splunk_hec_token`. `ubuntu_osquery_enabled` is `false` because upstream ships no ARM64 package. |
-| `vars/control.yml` | `control_repo_owner` and `control_repo`. The dest and owning user default to the `ansible` admin account, so they usually need no editing. |
-| `vars/secrets.yml` | `splunk_password`, `splunk_hec_token`, `grafana_admin_password`. `control_repo_gh_token` only for a private repo. Shared by the node and control-plane playbooks so both sides use the same HEC token. |
+| `group_vars/all/common.yml` | `control_plane_host` — the address every agent ships to; `provision-vms.sh` fills this in for local VMs. `tailscale_authkey` (leave empty to install Tailscale without joining a tailnet). Optionally adjust `fluent_bit_tail_paths`, `fluent_bit_security_tail_paths`, and `audit_rules`. |
+| `group_vars/all/arch.yml` | `ansible_admin_authorized_key` (the public key string for the bootstrap user). The Loki and Splunk endpoints derive from `control_plane_host`, so they need no editing unless your control plane is reached some other way. |
+| `group_vars/all/ubuntu.yml` | `ansible_admin_authorized_key_file` (path to the public key), `loki_host`, `splunk_hec_host`, `splunk_hec_token`. `ubuntu_osquery_enabled` is `false` because upstream ships no ARM64 package. |
+| `group_vars/all/control.yml` | `control_repo_owner` and `control_repo`. The dest and owning user default to the `ansible` admin account, so they usually need no editing. |
+| `group_vars/all/secrets.yml` | `splunk_password`, `splunk_hec_token`, `grafana_admin_password`. `control_repo_gh_token` only for a private repo. Shared by the node and control-plane playbooks so both sides use the same HEC token. Give each environment its own values. |
+
+Only `inventories/example/` is tracked in git; the real environment directories
+hold live hosts, keys and secrets and are gitignored.
 
 Splunk forwarding is skipped automatically on Ubuntu when `splunk_hec_host`/
 `splunk_hec_token` are empty.
@@ -125,13 +141,12 @@ SSL turned off on the control-plane side for the same reason. If you ever run
 this outside a trusted network, set `splunk_hec_tls: true`, set
 `splunk_hec_tls_verify` (defaults to on) and terminate TLS at the proxy.
 
-### 2. Inventory (`inventory.ini`)
+### 2. Hosts (`inventories/<env>/hosts.ini`)
 
-There is one inventory at the project root. Copy the example and set your hosts
-under the right group:
+Each environment has its own inventory. Set your hosts under the right group:
 
 ```bash
-cp inventory.ini.example inventory.ini
+$EDITOR inventories/stg/hosts.ini
 ```
 
 - Put Arch hosts under `[arch_hosts]` and Ubuntu hosts under `[ubuntu_hosts]`.
@@ -140,18 +155,18 @@ cp inventory.ini.example inventory.ini
   per run with `-e ansible_user=...` (e.g. `-e ansible_user=azureuser`); you
   don't need a second inventory. Use `-e`, not `-u`: `ansible_user` set on a
   group outranks `-u` on the command line, so `-u` is silently ignored here.
-- `inventory.tailscale.ini` is the same inventory but with Tailscale MagicDNS
-  names; select it with `-i inventory.tailscale.ini` once a host has joined the
-  tailnet.
+- To reach hosts over Tailscale instead, keep a second environment directory
+  (e.g. `inventories/stg-ts/`) whose `hosts.ini` uses MagicDNS names, and
+  select it with `-i`.
 
 Keep private keys outside the repo and readable only by you
 (`chmod 600 ~/.ssh/your_key`). Do not commit keys.
 
 ## Run
 
-`ansible.cfg` defaults to `inventory.ini`, so you only pass `-i` to switch to
-the Tailscale inventory. Bootstrap overrides the login user with
-`-e ansible_user=...`.
+`ansible.cfg` defaults to `inventories/stg`, so you only pass `-i` to target
+another environment (`-i inventories/prod`). Bootstrap overrides the login user
+with `-e ansible_user=...`.
 
 ### Arch Linux
 
@@ -181,7 +196,7 @@ ansible-playbook -i inventory.tailscale.ini site/ubuntu/site-ubuntu.yml
 
 Brings the whole control plane up on the host in `[control_hosts]`: installs
 Docker and the GitHub CLI, clones the control-server deployment repo, renders
-the stack's `.env` from `vars/secrets.yml`, registers every managed host as a
+the stack's `.env` from `group_vars/all/secrets.yml`, registers every managed host as a
 Prometheus scrape target, and starts the stack.
 
 ```bash
@@ -198,7 +213,7 @@ containers actually pick the new values up; an unchanged one leaves it running.
 
 **Secrets.** `.env` holds the Splunk admin password and HEC token, is
 gitignored, and never arrives with the clone — it is rendered on the host from
-`vars/secrets.yml`. That file is also where the *agents* get their HEC token,
+`group_vars/all/secrets.yml`. That file is also where the *agents* get their HEC token,
 which is what guarantees both sides of the wire agree. A token that matches
 nothing means Splunk rejects every event, and it fails quietly.
 
@@ -209,7 +224,7 @@ this play is all it takes. Prometheus is reloaded in place so the change lands
 immediately rather than at the next file_sd refresh.
 
 `gh` is used rather than a plain `git clone` so the same play works for a
-private repo: set `control_repo_gh_token` in `vars/secrets.yml` and it
+private repo: set `control_repo_gh_token` in `group_vars/all/secrets.yml` and it
 authenticates via `GH_TOKEN` in the task environment, which keeps the token out
 of the host's `gh` config and out of the process list. A public repo needs no
 token.

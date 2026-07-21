@@ -3,9 +3,9 @@
 #
 # Shared by site-control.yml (full provision) and update-setup.yml (code-only
 # refresh) so the public/private clone handling lives in exactly one place.
-# Both callers must load vars/secrets.yml: control_repo_gh_token is defined
-# there, and without it a private-repo deployment silently takes the public
-# path below and fails to authenticate.
+# control_repo_gh_token selects between the public and private clone paths. It
+# comes from the inventory's group_vars/all/secrets.yml, so it is present for
+# any play run with -i inventories/<env>.
 #
 # Notifies "Restart the control-server stack", so any play including this file
 # needs that handler -- import tasks/handlers.yml to get it.
