@@ -82,6 +82,7 @@
         force: false
       become_user: "{{ control_repo_owner_user }}"
       when: control_repo_gh_token | default('', true) | length == 0
+      notify: Restart the control-server stack
 
     # Private repos need credentials. gh reads GH_TOKEN from the environment,
     # which keeps the token out of the host's gh config and out of the process
@@ -120,6 +121,7 @@
         - control_repo_git.stat.exists
       register: control_repo_pull
       changed_when: "'Already up to date' not in control_repo_pull.stdout"
+      notify: Restart the control-server stack
 
     # .env is gitignored and never arrives with the clone, so it is rendered
     # here from vars/secrets.yml. The HEC token written here is the same one the
