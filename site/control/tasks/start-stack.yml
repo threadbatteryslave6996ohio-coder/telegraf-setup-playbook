@@ -1,0 +1,23 @@
+---
+# Bring the compose stack up and wait for it to serve traffic.
+#
+# Kept separate from update-repo.yml because site-control.yml has to render
+# .env and the Prometheus targets in between: the stack must not start before
+# its configuration is on disk.
+
+- name: Start the control-server stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ control_repo_dest }}"
+    project_name: "{{ control_stack_name }}"
+    state: present
+    pull: missing
+  become_user: "{{ control_repo_owner_user }}"
+
+- name: Wait for the proxy to answer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ control_proxy_port }}/health"
+    status_code: 204
+  retries: 30
+  delay: 5
+  register: control_proxy_health
+  until: control_proxy_health is succeeded

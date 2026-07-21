@@ -1,0 +1,21 @@
+---
+# Handlers shared by site-control.yml and update-setup.yml. Imported under each
+# play's `handlers:` key, so both plays react identically to a changed checkout.
+
+# A changed .env or checkout only reaches the containers on recreate, so bounce
+# the stack rather than leaving them running with the previous values.
+- name: Restart the control-server stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ control_repo_dest }}"
+    project_name: "{{ control_stack_name }}"
+    state: restarted
+  become_user: "{{ control_repo_owner_user }}"
+
+# Prometheus reads file_sd targets from disk on its own refresh interval;
+# --web.enable-lifecycle lets a reload pick them up immediately instead.
+- name: Reload Prometheus
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ control_proxy_port }}/prometheus/-/reload"
+    method: POST
+    status_code: [200, 405]
+  failed_when: false

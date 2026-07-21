@@ -1,0 +1,65 @@
+---
+# Bring the control-server deployment checkout to control_repo_version.
+#
+# Shared by site-control.yml (full provision) and update-setup.yml (code-only
+# refresh) so the public/private clone handling lives in exactly one place.
+# Both callers must load vars/secrets.yml: control_repo_gh_token is defined
+# there, and without it a private-repo deployment silently takes the public
+# path below and fails to authenticate.
+#
+# Notifies "Restart the control-server stack", so any play including this file
+# needs that handler -- import tasks/handlers.yml to get it.
+
+# A public repo clones over plain https with no credentials. gh is not used
+# for this case: it demands `gh auth login` even for a public repo, so it
+# would make an unauthenticated control plane impossible to provision.
+# force: false means local edits fail the run rather than being discarded.
+- name: Clone or update the control-server deployment repo
+  ansible.builtin.git:
+    repo: "https://github.com/{{ control_repo_owner }}/{{ control_repo }}.git"
+    dest: "{{ control_repo_dest }}"
+    version: "{{ control_repo_version }}"
+    update: true
+    force: false
+  become_user: "{{ control_repo_owner_user }}"
+  when: control_repo_gh_token | default('', true) | length == 0
+  notify: Restart the control-server stack
+
+# Private repos need credentials. gh reads GH_TOKEN from the environment,
+# which keeps the token out of the host's gh config and out of the process
+# list -- unlike embedding it in the clone URL, where it lands in
+# .git/config in plaintext.
+- name: Check whether the private repo is already cloned
+  ansible.builtin.stat:
+    path: "{{ control_repo_dest }}/.git"
+  register: control_repo_git
+  when: control_repo_gh_token | default('', true) | length > 0
+
+- name: Clone the private control-server deployment repo
+  ansible.builtin.command:
+    cmd: >-
+      gh repo clone {{ control_repo_owner }}/{{ control_repo }}
+      {{ control_repo_dest }}
+  environment:
+    GH_TOKEN: "{{ control_repo_gh_token }}"
+  become_user: "{{ control_repo_owner_user }}"
+  when:
+    - control_repo_gh_token | default('', true) | length > 0
+    - not control_repo_git.stat.exists
+  changed_when: true
+
+# --ff-only so a fast-forward conflict surfaces as a failure rather than
+# silently discarding edits made on the host.
+- name: Update the private control-server deployment repo
+  ansible.builtin.command:
+    cmd: git pull --ff-only
+    chdir: "{{ control_repo_dest }}"
+  environment:
+    GH_TOKEN: "{{ control_repo_gh_token }}"
+  become_user: "{{ control_repo_owner_user }}"
+  when:
+    - control_repo_gh_token | default('', true) | length > 0
+    - control_repo_git.stat.exists
+  register: control_repo_pull
+  changed_when: "'Already up to date' not in control_repo_pull.stdout"
+  notify: Restart the control-server stack

@@ -1,0 +1,64 @@
+---
+# Refresh the control plane's code without touching host setup.
+#
+#   ansible-playbook site/control/update-setup.yml
+#
+# Pulls the control-server deployment repo to control_repo_version (set in
+# vars/control.yml, normally `main`), restarts the stack if the checkout moved,
+# and waits for the proxy to come back. Nothing else: no package installs, no
+# .env or scrape-target rendering, no group changes.
+#
+# Use site-control.yml instead when provisioning a new control plane, or after
+# changing anything in vars/secrets.yml -- .env is rendered only there, so a
+# secret changed without that play never reaches the containers.
+- name: Update the control-server deployment on the control plane
+  hosts: control_hosts
+  remote_user: ansible
+  become: true
+  vars_files:
+    - ../../vars/common.yml
+    # Loaded for control_repo_gh_token, which selects the private-repo clone
+    # path in tasks/update-repo.yml. Omitting it would silently fall back to an
+    # unauthenticated clone.
+    - ../../vars/secrets.yml
+    - ../../vars/control.yml
+
+  pre_tasks:
+    - name: Fail when the control repo variables are missing
+      ansible.builtin.assert:
+        that:
+          - control_repo | length > 0
+          - control_repo_dest | length > 0
+          - control_repo_owner | length > 0
+          - control_repo_version | length > 0
+        fail_msg: >-
+          Set control_repo, control_repo_owner, control_repo_dest and
+          control_repo_version in vars/control.yml before running.
+
+    # This play only updates an existing deployment. Pointing it at a host that
+    # has never been provisioned would clone the repo but leave it without an
+    # .env, so the stack would come up misconfigured -- fail with a clear
+    # pointer instead.
+    - name: Check whether the control plane is already provisioned
+      ansible.builtin.stat:
+        path: "{{ control_repo_dest }}/.env"
+      register: control_env
+
+    - name: Fail when the control plane has not been provisioned yet
+      ansible.builtin.assert:
+        that:
+          - control_env.stat.exists
+        fail_msg: >-
+          No .env at {{ control_repo_dest }} -- this host has not been
+          provisioned. Run site/control/site-control.yml first.
+
+  tasks:
+    - name: Update the deployment checkout
+      ansible.builtin.include_tasks: tasks/update-repo.yml
+
+    - name: Start the stack and wait for it
+      ansible.builtin.include_tasks: tasks/start-stack.yml
+
+  handlers:
+    - name: Shared control-plane handlers
+      ansible.builtin.import_tasks: tasks/handlers.yml
